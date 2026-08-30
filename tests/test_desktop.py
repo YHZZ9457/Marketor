@@ -3,6 +3,7 @@ from csi300_service.desktop import (
     THEMES,
     LineChart,
     calculate_window_size,
+    combobox_popup_options,
     direction_color,
     format_number,
     format_pct,
@@ -45,3 +46,12 @@ def test_high_dpi_window_size_stays_inside_screen():
     width, height = calculate_window_size(1920, 1080, 1.5)
     assert width <= 1920
     assert height <= 1080
+
+
+def test_combobox_popup_uses_theme_and_readable_font():
+    palette = THEMES["深海蓝"]
+    options = combobox_popup_options(palette)
+    assert options["-background"] == palette["panel"]
+    assert options["-selectbackground"] == palette["selected"]
+    assert "11" in str(options["-font"])
+    assert options["-activestyle"] == "none"

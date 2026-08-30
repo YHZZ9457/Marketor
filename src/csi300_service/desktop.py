@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import os
-import ctypes
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -54,6 +54,22 @@ DATA_SOURCES = {
     "自动": "auto", "BaoStock": "baostock", "腾讯": "tencent",
     "东方财富": "eastmoney", "Tushare": "tushare", "仅本地": "local",
 }
+
+
+def combobox_popup_options(colors: dict[str, str]) -> dict[str, object]:
+    """Return classic Tk listbox options used by ttk combobox popdowns."""
+    return {
+        "-background": colors["panel"],
+        "-foreground": colors["text"],
+        "-selectbackground": colors["selected"],
+        "-selectforeground": colors["text"],
+        "-font": "{Microsoft YaHei UI} 11",
+        "-activestyle": "none",
+        "-borderwidth": 0,
+        "-highlightthickness": 1,
+        "-highlightbackground": colors["line"],
+        "-highlightcolor": colors["mint"],
+    }
 
 
 def enable_high_dpi_awareness() -> None:
@@ -208,11 +224,7 @@ class MarketDesktopApp:
         style.theme_use("clam")
         style.configure("Toolbar.TCombobox", fieldbackground=COLORS["panel_alt"], background=COLORS["panel_alt"], foreground=COLORS["text"], arrowcolor=COLORS["mint"], bordercolor=COLORS["line"], lightcolor=COLORS["line"], darkcolor=COLORS["line"], padding=(10, 7), arrowsize=16, font=("Microsoft YaHei UI", 10))
         style.map("Toolbar.TCombobox", fieldbackground=[("readonly", COLORS["panel_alt"])], foreground=[("readonly", COLORS["text"])], bordercolor=[("focus", COLORS["mint"])])
-        self.root.option_add("*TCombobox*Listbox.font", "{Microsoft YaHei UI} 10")
-        self.root.option_add("*TCombobox*Listbox.background", COLORS["panel"])
-        self.root.option_add("*TCombobox*Listbox.foreground", COLORS["text"])
-        self.root.option_add("*TCombobox*Listbox.selectBackground", COLORS["selected"])
-        self.root.option_add("*TCombobox*Listbox.selectForeground", COLORS["text"])
+        style.configure("Dropdown.Vertical.TScrollbar", background=COLORS["button"], troughcolor=COLORS["panel_alt"], arrowcolor=COLORS["mint"], bordercolor=COLORS["line"], lightcolor=COLORS["line"], darkcolor=COLORS["line"])
         style.configure("Treeview", background=COLORS["panel"], fieldbackground=COLORS["panel"], foreground=COLORS["text"], rowheight=31, borderwidth=0, font=("Microsoft YaHei UI", 9))
         style.configure("Treeview.Heading", background=COLORS["panel_alt"], foreground=COLORS["muted"], relief="flat", padding=(8, 9), font=("Microsoft YaHei UI", 9, "bold"))
         style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
@@ -236,7 +248,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.10", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.11", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -367,9 +379,23 @@ class MarketDesktopApp:
             width=width, style="Toolbar.TCombobox", height=min(16, len(values)),
         )
         box.pack(anchor="w")
+        box.configure(postcommand=lambda widget=box: self._style_combobox_popup(widget))
         if command is not None:
             box.bind("<<ComboboxSelected>>", command)
         return box
+
+    def _style_combobox_popup(self, box: ttk.Combobox) -> None:
+        """Style the real popdown listbox, which is outside ttk's normal style tree."""
+        try:
+            popdown = str(self.root.tk.call("ttk::combobox::PopdownWindow", str(box)))
+            listbox = f"{popdown}.f.l"
+            scrollbar = f"{popdown}.f.sb"
+            options = combobox_popup_options(COLORS)
+            flattened = [value for pair in options.items() for value in pair]
+            self.root.tk.call(listbox, "configure", *flattened)
+            self.root.tk.call(scrollbar, "configure", "-style", "Dropdown.Vertical.TScrollbar")
+        except tk.TclError:
+            pass
 
     def _on_theme_change(self, _event: Any) -> None:
         name = self.theme_var.get()

@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from csi300_service.catalog import InstrumentCatalog
+from csi300_service.catalog import InstrumentCatalog, default_data_dir
 from csi300_service.service import CSI300Service, MarketService
 from csi300_service.statistics import register_statistics_method
 
@@ -87,3 +87,19 @@ def test_catalog_hides_instrument_without_local_data(tmp_path):
     catalog = InstrumentCatalog(config)
     assert len(catalog.list()) == 1
     assert catalog.list(include_unavailable=False) == []
+
+
+def test_frozen_app_copies_bundled_data_to_writable_profile(tmp_path, monkeypatch):
+    bundled = tmp_path / "bundle" / "data"
+    bundled.mkdir(parents=True)
+    (bundled / "instruments.json").write_text('{"instruments": []}', encoding="utf-8")
+    (bundled / "sample.csv").write_text("date,close\n2024-01-01,100\n", encoding="utf-8")
+    profile = tmp_path / "profile"
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys._MEIPASS", str(tmp_path / "bundle"), raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(profile))
+
+    result = default_data_dir()
+
+    assert result == profile / "Marketor" / "data"
+    assert (result / "sample.csv").exists()

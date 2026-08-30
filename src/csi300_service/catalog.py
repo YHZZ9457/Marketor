@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
+import shutil
+import sys
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,15 @@ class Instrument:
 
 
 def default_data_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        bundled = Path(getattr(sys, "_MEIPASS")) / "data"
+        target = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Marketor" / "data"
+        target.mkdir(parents=True, exist_ok=True)
+        for source in bundled.iterdir():
+            destination = target / source.name
+            if source.name == "instruments.json" or not destination.exists():
+                shutil.copy2(source, destination)
+        return target
     return Path(__file__).resolve().parents[2] / "data"
 
 

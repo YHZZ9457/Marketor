@@ -1,4 +1,5 @@
 .venv/
+.venv-package/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -13,6 +14,10 @@ _pytest_basetmp/
 pytest-cache-files-*
 .pytest-formal/
 *.zip
+build/
+dist/
+installer-output/
+*.spec.bak
 # 全局指数批量下载器产物（非本项目数据结构，不入库）
 data/all_indices_close.csv
 data/download_summary.csv
