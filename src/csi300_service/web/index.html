@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="本地多标的行情、技术指标与持有收益分析仪表盘">
+  <title>市场航图 · 本地行情分析</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">LOCAL MARKET CONSOLE</p>
+        <h1>市场航图</h1>
+        <p class="subtitle">把长期位置、短期动量与历史胜率放在同一张桌面上。</p>
+      </div>
+      <div class="controls" aria-label="行情控制">
+        <label>
+          <span>观察标的</span>
+          <div id="symbol-select" class="dropdown" aria-label="选择行情标的"></div>
+        </label>
+        <button id="reload-button" class="reload" type="button">刷新数据</button>
+      </div>
+    </header>
+
+    <div id="status-wrap" class="status-wrap" aria-live="polite">
+      <div class="status-clip">
+        <div id="status" class="status" role="status">
+          <span class="status-icon" aria-hidden="true"></span>
+          <span id="status-text" class="status-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <section class="summary-grid" aria-label="关键指标">
+      <article class="price-card panel">
+        <div class="card-heading">
+          <div>
+            <p id="instrument-kind" class="kicker">指数 · CNY</p>
+            <h2 id="instrument-name">沪深300</h2>
+          </div>
+          <span id="data-date" class="date-chip">—</span>
+        </div>
+        <div class="price-row">
+          <strong id="latest-price">—</strong>
+          <span id="ret-20d" class="change">近20日 —</span>
+        </div>
+        <div class="microcopy"><span id="data-range">数据范围 —</span><span id="row-count">— 条记录</span></div>
+      </article>
+
+      <article class="metric-card panel">
+        <p class="kicker">长周期位置</p>
+        <div class="metric-pair"><span>MA250 乖离</span><strong id="bias-250">—</strong></div>
+        <div class="metric-pair"><span>MA500 乖离</span><strong id="bias-500">—</strong></div>
+        <div class="metric-pair"><span>MA1250 乖离</span><strong id="bias-1250">—</strong></div>
+      </article>
+
+      <article class="metric-card panel">
+        <p class="kicker">动量与回撤</p>
+        <div class="metric-pair"><span>RSI14</span><strong id="rsi-14">—</strong></div>
+        <div class="metric-pair"><span>250日高点回撤</span><strong id="drawdown-250">—</strong></div>
+        <div class="rsi-track" aria-hidden="true"><span id="rsi-marker"></span></div>
+        <div class="track-labels"><span>超卖 30</span><span>过热 70</span></div>
+      </article>
+    </section>
+
+    <section class="chart-panel panel">
+      <div class="section-head">
+        <div>
+          <p class="kicker">PRICE & LONG CYCLES</p>
+          <h2>收盘价与长期均线</h2>
+        </div>
+        <div class="periods" aria-label="图表周期">
+          <button type="button" data-days="120">半年</button>
+          <button type="button" data-days="250" class="active">1年</button>
+          <button type="button" data-days="500">2年</button>
+          <button type="button" data-days="1000">4年</button>
+        </div>
+      </div>
+      <div class="legend" aria-label="图例">
+        <span><i class="close-dot"></i>收盘价</span>
+        <span><i class="ma250-dot"></i>MA250</span>
+        <span><i class="ma500-dot"></i>MA500</span>
+        <span><i class="ma1250-dot"></i>MA1250</span>
+      </div>
+      <div id="chart" class="chart" aria-label="行情走势图"></div>
+    </section>
+
+    <section class="decision-grid">
+      <article id="buy-card" class="signal-card panel buy-card">
+        <div class="signal-title"><div><p class="kicker">ACCUMULATION</p><h2>加仓辅助</h2></div><span id="buy-level" class="signal-level">—</span></div>
+        <strong id="buy-score" class="signal-score">—</strong>
+        <p id="buy-action" class="signal-action">—</p>
+        <ul id="buy-reasons" class="reason-list"></ul>
+      </article>
+      <article id="sell-card" class="signal-card panel sell-card">
+        <div class="signal-title"><div><p class="kicker">REDUCTION</p><h2>减仓辅助</h2></div><span id="sell-level" class="signal-level">—</span></div>
+        <strong id="sell-score" class="signal-score">—</strong>
+        <p id="sell-action" class="signal-action">—</p>
+        <ul id="sell-reasons" class="reason-list"></ul>
+      </article>
+    </section>
+
+    <section class="returns-panel panel">
+      <div class="section-head">
+        <div><p class="kicker">HISTORICAL ODDS</p><h2>历史持有收益</h2></div>
+        <label class="method-label">统计口径
+          <div id="method-select" class="dropdown dropdown-small" aria-label="选择统计方法"></div>
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>持有期</th><th>样本数</th><th>平均收益</th><th>中位数</th><th>正收益率</th><th>最差</th><th>最好</th></tr></thead>
+          <tbody id="returns-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>本页面读取项目内本地 CSV；结果仅作研究和辅助决策，不构成投资建议。</p>
+      <a href="/docs" target="_blank" rel="noreferrer">打开 API 文档 ↗</a>
+    </footer>
+  </main>
+  <script src="/static/dashboard.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.env
+# 本地数据源记录（CSV 旁的 .meta.json，含本机下载时间）
+*.meta.json
+# Windows 个人快捷方式
+*.lnk
+# 测试临时目录
+_pytest_basetmp/
+pytest-cache-files-*
+# 全局指数批量下载器产物（非本项目数据结构，不入库）
+data/all_indices_close.csv
+data/download_summary.csv
+data/index_catalog.csv
+data/SOURCE_VALIDATION.md
+data/000300_沪深300.csv
+data/000852_中证1000.csv
+data/000905_中证500.csv
+data/000906_中证800.csv
+data/000922_中证红利.csv
+data/399006_创业板指.csv

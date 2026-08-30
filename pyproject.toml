@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "csi300-codex"
+version = "0.9.0"
+description = "Extensible multi-instrument market data, statistics, and allocation signal service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.1",
+  "numpy>=1.26",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "typer>=0.12",
+  "baostock>=0.9.3",
+  "akshare>=1.18.90",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# starlette >= 1.x 的 TestClient 使用 httpx2；旧版本栈可改回 httpx
+dev = ["pytest>=8.0", "httpx2>=1.0"]
+tushare = ["tushare>=1.4"]
+
+[project.scripts]
+csi300 = "csi300_service.cli:app"
+csi300-app = "csi300_service.desktop:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+csi300_service = ["web/*"]
