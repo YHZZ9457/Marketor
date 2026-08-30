@@ -41,7 +41,7 @@ class MarketService:
 
     def indicators(self, days: int = 30) -> list[dict]:
         days = max(1, min(days, 1000))
-        cols = ["date", "close", "ma180", "ma250", "ma500", "ma1250", "bias180", "bias250", "bias500", "bias1250", "rsi14", "drawdown_250d", "ret_20d"]
+        cols = ["date", "close", "ma60", "ma250", "ma500", "ma1250", "bias60", "bias180", "bias250", "bias500", "bias1250", "rsi14", "drawdown_250d", "ret_20d"]
         return [self._row_to_dict(row[cols]) for _, row in self.df.tail(days).iterrows()]
 
     def history(self, start: str | None = None, end: str | None = None, limit: int = 5000) -> list[dict]:

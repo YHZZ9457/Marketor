@@ -222,7 +222,7 @@ function renderChart(rows) {
   host.replaceChildren();
   if (!rows.length) { host.innerHTML = '<div class="chart-empty">所选周期暂无数据</div>'; return; }
   const width = 1200, height = 360, margin = { top: 12, right: 66, bottom: 28, left: 8 };
-  const series = ["close", "ma250", "ma500", "ma1250"];
+  const series = ["close", "ma60", "ma250", "ma500", "ma1250"];
   const values = rows.flatMap((row) => series.map((key) => row[key]).filter((value) => value != null));
   const rawMin = Math.min(...values), rawMax = Math.max(...values), pad = Math.max((rawMax - rawMin) * .09, rawMax * .01);
   const min = rawMin - pad, max = rawMax + pad;
@@ -243,7 +243,7 @@ function renderChart(rows) {
     const label = document.createElementNS(svg.namespaceURI, "text");
     label.setAttribute("x", x(index)); label.setAttribute("y", height - 4); label.setAttribute("text-anchor", i === 0 ? "start" : i === 2 ? "end" : "middle"); label.setAttribute("class", "chart-label"); label.textContent = rows[index].date; svg.append(label);
   });
-  const colors = { close: "#eff8f4", ma250: "#72e6bc", ma500: "#e6bd70", ma1250: "#5fc9db" };
+  const colors = { close: "#eff8f4", ma60: "#c3b3f0", ma250: "#72e6bc", ma500: "#e6bd70", ma1250: "#5fc9db" };
   series.forEach((key) => {
     const path = document.createElementNS(svg.namespaceURI, "path");
     path.setAttribute("d", linePath(rows, key, x, y)); path.setAttribute("class", "chart-line"); path.setAttribute("stroke", colors[key]); path.setAttribute("stroke-width", key === "close" ? "2.3" : "1.55"); path.setAttribute("opacity", key === "close" ? "1" : ".9"); svg.append(path);

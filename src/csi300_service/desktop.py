@@ -19,25 +19,29 @@ THEMES = {
     "墨绿夜色": {
         "bg": "#07110f", "panel": "#10231f", "panel_alt": "#0c1c19", "line": "#29433c",
         "text": "#eff8f4", "muted": "#91aaa2", "soft_text": "#c4d3ce", "mint": "#72e6bc",
-        "cyan": "#5fc9db", "gold": "#e6bd70", "coral": "#ff927d", "selected": "#23493f",
+        "cyan": "#5fc9db", "gold": "#e6bd70", "coral": "#ff927d", "violet": "#c3b3f0",
+        "selected": "#23493f",
         "button": "#17312b", "button_hover": "#21473d", "rank_button": "#172d31", "rank_hover": "#214148",
     },
     "深海蓝": {
         "bg": "#07101f", "panel": "#101d32", "panel_alt": "#0b1729", "line": "#273b58",
         "text": "#f2f6ff", "muted": "#8fa4c4", "soft_text": "#c5d0e3", "mint": "#56ddb2",
-        "cyan": "#69c8ff", "gold": "#f3c969", "coral": "#ff8d9b", "selected": "#20466a",
+        "cyan": "#69c8ff", "gold": "#f3c969", "coral": "#ff8d9b", "violet": "#b9a6f5",
+        "selected": "#20466a",
         "button": "#163451", "button_hover": "#205076", "rank_button": "#253052", "rank_hover": "#34446e",
     },
     "石墨紫": {
         "bg": "#111018", "panel": "#1d1b29", "panel_alt": "#171522", "line": "#39354b",
         "text": "#f6f3ff", "muted": "#aaa4be", "soft_text": "#d0cadc", "mint": "#75dfbc",
-        "cyan": "#8bbcff", "gold": "#f0c674", "coral": "#ff8fa3", "selected": "#493f69",
+        "cyan": "#8bbcff", "gold": "#f0c674", "coral": "#ff8fa3", "violet": "#b39df0",
+        "selected": "#493f69",
         "button": "#2d2842", "button_hover": "#423a60", "rank_button": "#252e47", "rank_hover": "#374363",
     },
     "象牙日光": {
         "bg": "#f3f0e8", "panel": "#fffdf8", "panel_alt": "#eae6dc", "line": "#d2ccbd",
         "text": "#202923", "muted": "#69756e", "soft_text": "#48564e", "mint": "#148563",
-        "cyan": "#167b98", "gold": "#a66d12", "coral": "#c64f43", "selected": "#cde6dc",
+        "cyan": "#167b98", "gold": "#a66d12", "coral": "#c64f43", "violet": "#6a4fa3",
+        "selected": "#cde6dc",
         "button": "#dcece5", "button_hover": "#c6dfd4", "rank_button": "#dce8ed", "rank_hover": "#c6dce4",
     },
 }
@@ -92,6 +96,7 @@ def direction_color(value: float | None) -> str:
 class LineChart(tk.Canvas):
     SERIES = (
         ("close", "收盘价", "text", 2),
+        ("ma60", "MA60", "violet", 1),
         ("ma250", "MA250", "mint", 1),
         ("ma500", "MA500", "gold", 1),
         ("ma1250", "MA1250", "cyan", 1),

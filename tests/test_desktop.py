@@ -1,4 +1,4 @@
-from csi300_service.desktop import PERIODS, THEMES, direction_color, format_number, format_pct, load_theme, save_theme
+from csi300_service.desktop import PERIODS, THEMES, LineChart, direction_color, format_number, format_pct, load_theme, save_theme
 
 
 def test_desktop_formatters():
@@ -6,6 +6,11 @@ def test_desktop_formatters():
     assert format_pct(-0.0123) == "-1.23%"
     assert format_pct(0.0123) == "+1.23%"
     assert format_pct(None) == "—"
+
+
+def test_desktop_chart_series_shows_ma60():
+    keys = [key for key, *_ in LineChart.SERIES]
+    assert keys == ["close", "ma60", "ma250", "ma500", "ma1250"]
 
 
 def test_desktop_periods_and_direction():

@@ -23,7 +23,7 @@ Maintain a small, auditable multi-instrument market analysis service for histori
 - Deduplicated event backtests define an event at the false-to-true threshold crossing, then apply the configured trading-day cooldown between event starts.
 
 ## Indicator conventions
-- MA180, MA250, MA500, MA1250 are simple moving averages of `close` over trading days.
+- Charts display MA60, MA250, MA500, MA1250 — simple moving averages of `close` over trading days. Windows 5/10/20/180 remain computed and available through the indicators API, but are not drawn.
 - Bias = close / MA - 1.
 - RSI14 uses Wilder smoothing.
 - RSI pullback flags are based on the prior day's RSI crossing down through 75 or 70.
