@@ -78,5 +78,8 @@ class InstrumentCatalog:
             available = ", ".join(sorted(self._items))
             raise KeyError(f"Unknown instrument {symbol!r}; available: {available}") from exc
 
-    def list(self) -> list[Instrument]:
-        return list(self._items.values())
+    def list(self, *, include_unavailable: bool = True) -> list[Instrument]:
+        items = list(self._items.values())
+        if include_unavailable:
+            return items
+        return [item for item in items if item.has_data]

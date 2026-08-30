@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import ctypes
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -53,6 +54,31 @@ DATA_SOURCES = {
     "自动": "auto", "BaoStock": "baostock", "腾讯": "tencent",
     "东方财富": "eastmoney", "Tushare": "tushare", "仅本地": "local",
 }
+
+
+def enable_high_dpi_awareness() -> None:
+    """Enable crisp per-monitor rendering before creating the Tk root window."""
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        return
+    except (AttributeError, OSError):
+        pass
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+
+
+def calculate_window_size(screen_width: int, screen_height: int, scale: float) -> tuple[int, int]:
+    scale = max(1.0, min(float(scale), 2.5))
+    width = min(round(1280 * scale), round(screen_width * 0.92))
+    height = min(round(850 * scale), round(screen_height * 0.90))
+    return max(width, min(960, screen_width)), max(height, min(680, screen_height))
 
 
 def _theme_settings_path() -> Path:
@@ -154,25 +180,39 @@ class MarketDesktopApp:
         COLORS.clear()
         COLORS.update(THEMES[self.theme_name])
         self.catalog = InstrumentCatalog()
-        self.instruments = self.catalog.list()
+        self.instruments = self.catalog.list(include_unavailable=False)
         self.current_symbol = self.instruments[0].symbol
         self.provider_status = "当前数据源：本地 CSV · 在线状态：待检查"
+        self._configure_scaling()
         self._configure_window()
         self._configure_styles()
         self._build_ui()
         self.refresh()
 
+    def _configure_scaling(self) -> None:
+        dpi = float(self.root.winfo_fpixels("1i"))
+        self.ui_scale = max(1.0, min(dpi / 96.0, 2.5))
+        self.root.tk.call("tk", "scaling", dpi / 72.0)
+
     def _configure_window(self) -> None:
         self.root.title("市场航图 · 本地行情分析")
-        self.root.geometry("1280x850")
-        self.root.minsize(980, 700)
+        screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        width, height = calculate_window_size(screen_width, screen_height, self.ui_scale)
+        left, top = max(0, (screen_width - width) // 2), max(0, (screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{left}+{top}")
+        self.root.minsize(min(round(980 * self.ui_scale), width), min(round(700 * self.ui_scale), height))
         self.root.configure(bg=COLORS["bg"])
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
-        style.configure("TCombobox", fieldbackground=COLORS["panel_alt"], background=COLORS["panel_alt"], foreground=COLORS["text"], arrowcolor=COLORS["mint"], bordercolor=COLORS["line"], lightcolor=COLORS["line"], darkcolor=COLORS["line"], padding=(9, 6), font=("Microsoft YaHei UI", 9))
-        style.map("TCombobox", fieldbackground=[("readonly", COLORS["panel_alt"])], foreground=[("readonly", COLORS["text"])])
+        style.configure("Toolbar.TCombobox", fieldbackground=COLORS["panel_alt"], background=COLORS["panel_alt"], foreground=COLORS["text"], arrowcolor=COLORS["mint"], bordercolor=COLORS["line"], lightcolor=COLORS["line"], darkcolor=COLORS["line"], padding=(10, 7), arrowsize=16, font=("Microsoft YaHei UI", 10))
+        style.map("Toolbar.TCombobox", fieldbackground=[("readonly", COLORS["panel_alt"])], foreground=[("readonly", COLORS["text"])], bordercolor=[("focus", COLORS["mint"])])
+        self.root.option_add("*TCombobox*Listbox.font", "{Microsoft YaHei UI} 10")
+        self.root.option_add("*TCombobox*Listbox.background", COLORS["panel"])
+        self.root.option_add("*TCombobox*Listbox.foreground", COLORS["text"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", COLORS["selected"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", COLORS["text"])
         style.configure("Treeview", background=COLORS["panel"], fieldbackground=COLORS["panel"], foreground=COLORS["text"], rowheight=31, borderwidth=0, font=("Microsoft YaHei UI", 9))
         style.configure("Treeview.Heading", background=COLORS["panel_alt"], foreground=COLORS["muted"], relief="flat", padding=(8, 9), font=("Microsoft YaHei UI", 9, "bold"))
         style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
@@ -196,7 +236,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.9", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.10", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -204,22 +244,19 @@ class MarketDesktopApp:
         actions.pack(side="right", anchor="center")
         selectors = tk.Frame(actions, bg=COLORS["panel"])
         selectors.pack(anchor="e", pady=(0, 8))
-        names = [f"{item.name} · {item.symbol}" for item in self.instruments]
+        self.symbol_choices = {
+            f"{item.name}  ·  {(item.provider_code or item.symbol).split('.')[0]}": item.symbol
+            for item in self.instruments
+        }
+        names = list(self.symbol_choices)
         self.symbol_var = tk.StringVar(value=names[0])
-        symbol_box = ttk.Combobox(selectors, textvariable=self.symbol_var, values=names, state="readonly", width=21)
-        symbol_box.pack(side="left", ipady=5, padx=(0, 8))
-        symbol_box.bind("<<ComboboxSelected>>", self._on_symbol_change)
+        self._selector_control(selectors, "指数", self.symbol_var, names, 21, self._on_symbol_change)
         self.period_var = tk.StringVar(value="1年")
-        period_box = ttk.Combobox(selectors, textvariable=self.period_var, values=list(PERIODS), state="readonly", width=6)
-        period_box.pack(side="left", ipady=5, padx=(0, 8))
-        period_box.bind("<<ComboboxSelected>>", lambda _event: self.refresh())
+        self._selector_control(selectors, "图表周期", self.period_var, list(PERIODS), 7, lambda _event: self.refresh())
         self.source_var = tk.StringVar(value="自动")
-        source_box = ttk.Combobox(selectors, textvariable=self.source_var, values=list(DATA_SOURCES), state="readonly", width=8)
-        source_box.pack(side="left", ipady=5, padx=(0, 8))
+        self._selector_control(selectors, "数据源", self.source_var, list(DATA_SOURCES), 9)
         self.theme_var = tk.StringVar(value=self.theme_name)
-        theme_box = ttk.Combobox(selectors, textvariable=self.theme_var, values=list(THEMES), state="readonly", width=9)
-        theme_box.pack(side="left", ipady=5)
-        theme_box.bind("<<ComboboxSelected>>", self._on_theme_change)
+        self._selector_control(selectors, "主题", self.theme_var, list(THEMES), 10, self._on_theme_change, last=True)
         buttons = tk.Frame(actions, bg=COLORS["panel"])
         buttons.pack(anchor="e")
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -311,6 +348,29 @@ class MarketDesktopApp:
         reasons = self._label(content, "—", 8, COLORS["soft_text"], wraplength=280, justify="left"); reasons.pack(anchor="w", pady=(10, 0))
         return {"level": level, "score": score, "action": action, "reasons": reasons}
 
+    def _selector_control(
+        self,
+        parent: tk.Misc,
+        label: str,
+        variable: tk.StringVar,
+        values: list[str],
+        width: int,
+        command: Any | None = None,
+        *,
+        last: bool = False,
+    ) -> ttk.Combobox:
+        group = tk.Frame(parent, bg=COLORS["panel"])
+        group.pack(side="left", padx=(0, 0 if last else 10))
+        self._label(group, label, 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
+        box = ttk.Combobox(
+            group, textvariable=variable, values=values, state="readonly",
+            width=width, style="Toolbar.TCombobox", height=min(16, len(values)),
+        )
+        box.pack(anchor="w")
+        if command is not None:
+            box.bind("<<ComboboxSelected>>", command)
+        return box
+
     def _on_theme_change(self, _event: Any) -> None:
         name = self.theme_var.get()
         if name not in THEMES or name == self.theme_name:
@@ -358,8 +418,7 @@ class MarketDesktopApp:
             cls._recolor_widget(child, color_map)
 
     def _on_symbol_change(self, _event: Any) -> None:
-        index = self.symbol_var.get().rpartition(" · ")[2]
-        self.current_symbol = index
+        self.current_symbol = self.symbol_choices[self.symbol_var.get()]
         self.refresh()
 
     def refresh(self) -> None:
@@ -552,6 +611,7 @@ class MarketDesktopApp:
 
 
 def main() -> None:
+    enable_high_dpi_awareness()
     root = tk.Tk()
     MarketDesktopApp(root)
     root.mainloop()

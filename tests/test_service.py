@@ -70,8 +70,20 @@ def test_unknown_statistics_method():
 def test_bundled_catalog_includes_verified_new_indices():
     catalog = InstrumentCatalog()
     assert len(catalog.list()) == 22
+    assert len(catalog.list(include_unavailable=False)) == 16
     assert catalog.get("sse_composite").tencent_code == "sh000001"
     assert catalog.get("star50").source_priority[0] == "eastmoney"
     assert catalog.get("csi300").zh_index_code == "000300"
     assert catalog.get("csi2000").zh_index_code == "932000"
     assert catalog.get("star100").zh_index_code == "000698"
+
+
+def test_catalog_hides_instrument_without_local_data(tmp_path):
+    config = tmp_path / "instruments.json"
+    config.write_text(json.dumps({"instruments": [{
+        "symbol": "missing", "name": "Missing Market", "data_file": "missing.csv",
+    }]}), encoding="utf-8")
+
+    catalog = InstrumentCatalog(config)
+    assert len(catalog.list()) == 1
+    assert catalog.list(include_unavailable=False) == []

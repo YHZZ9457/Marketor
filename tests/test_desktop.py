@@ -1,4 +1,14 @@
-from csi300_service.desktop import PERIODS, THEMES, LineChart, direction_color, format_number, format_pct, load_theme, save_theme
+from csi300_service.desktop import (
+    PERIODS,
+    THEMES,
+    LineChart,
+    calculate_window_size,
+    direction_color,
+    format_number,
+    format_pct,
+    load_theme,
+    save_theme,
+)
 
 
 def test_desktop_formatters():
@@ -28,3 +38,10 @@ def test_theme_preference_round_trip(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     save_theme("深海蓝")
     assert load_theme() == "深海蓝"
+
+
+def test_high_dpi_window_size_stays_inside_screen():
+    assert calculate_window_size(3840, 2160, 2.0) == (2560, 1700)
+    width, height = calculate_window_size(1920, 1080, 1.5)
+    assert width <= 1920
+    assert height <= 1080

@@ -11,6 +11,8 @@ __pycache__/
 # 测试临时目录
 _pytest_basetmp/
 pytest-cache-files-*
+.pytest-formal/
+*.zip
 # 全局指数批量下载器产物（非本项目数据结构，不入库）
 data/all_indices_close.csv
 data/download_summary.csv

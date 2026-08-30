@@ -1,4 +1,4 @@
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 from .catalog import Instrument, InstrumentCatalog
 from .comparison import MarketComparisonService, allocation_scores
 from .events import EventBacktester

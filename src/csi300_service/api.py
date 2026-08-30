@@ -13,7 +13,7 @@ from .events import EventBacktester
 from .service import MarketService
 from .statistics import statistics_methods
 
-app = FastAPI(title="Market Analysis Service", version="0.9.0")
+app = FastAPI(title="Market Analysis Service", version="0.10.0")
 catalog = InstrumentCatalog()
 web_dir = Path(__file__).resolve().parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
