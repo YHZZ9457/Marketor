@@ -10,8 +10,12 @@ from csi300_service.catalog import InstrumentCatalog
 from csi300_service.data import load_data
 from csi300_service.data_sources import (
     AKShareEastMoneyDataSource,
+    AKShareGlobalEastMoneyDataSource,
+    AKShareGlobalSinaDataSource,
+    AKShareHKIndexSinaDataSource,
     AKShareIndexZHHistDataSource,
     AKShareTencentDataSource,
+    AKShareUSIndexSinaDataSource,
     BaoStockDataSource,
     MarketDataSource,
     TushareDataSource,
@@ -198,6 +202,87 @@ def test_zh_hist_without_backup_code_reports_clear_error():
 
     with pytest.raises(RuntimeError, match="未配置东方财富备用代码"):
         AKShareIndexZHHistDataSource("000300", client=Client()).get_daily()
+
+
+def test_global_eastmoney_normalizes_chinese_columns_and_date_range():
+    class Client:
+        def index_global_hist_em(self, **kwargs):
+            assert kwargs["symbol"] == "日经225"
+            return pd.DataFrame({
+                "日期": ["2024-01-01", "2024-01-02", "2024-01-03"],
+                "今开": [100, 101, 102], "最新价": [101, 102, 103],
+                "最高": [102, 103, 104], "最低": [99, 100, 101],
+            })
+
+    result = AKShareGlobalEastMoneyDataSource("日经225", client=Client()).get_daily(
+        "2024-01-02", "2024-01-03"
+    )
+    assert len(result) == 2
+    assert list(result.columns) == ["date", "open", "high", "low", "close", "amount", "daily_return"]
+    assert result.iloc[-1]["daily_return"] == pytest.approx(103 / 102 - 1)
+
+
+def test_global_source_repairs_small_ohlc_envelope_gap():
+    class Client:
+        def index_us_stock_sina(self, **kwargs):
+            return pd.DataFrame({
+                "date": ["2024-01-02"], "open": [100.0], "close": [101.0],
+                "high": [101.0], "low": [100.5],
+            })
+
+    result = AKShareUSIndexSinaDataSource(".INX", client=Client()).get_daily()
+    assert result.iloc[0]["low"] == 100.0
+
+
+def test_global_source_drops_isolated_severe_ohlc_row():
+    class Client:
+        def index_us_stock_sina(self, **kwargs):
+            rows = 250
+            return pd.DataFrame({
+                "date": pd.bdate_range("2024-01-02", periods=rows),
+                "open": [100.0] * (rows - 1) + [100.0],
+                "close": [101.0] * (rows - 1) + [101.0],
+                "high": [102.0] * (rows - 1) + [50.0],
+                "low": [99.0] * rows,
+            })
+
+    result = AKShareUSIndexSinaDataSource(".INX", client=Client()).get_daily()
+    assert len(result) == 249
+
+
+@pytest.mark.parametrize(
+    ("source_type", "method", "symbol"),
+    [
+        (AKShareUSIndexSinaDataSource, "index_us_stock_sina", ".INX"),
+        (AKShareHKIndexSinaDataSource, "stock_hk_index_daily_sina", "HSI"),
+    ],
+)
+def test_sina_global_sources_normalize_schema(source_type, method, symbol):
+    class Client:
+        def __getattr__(self, name):
+            assert name == method
+            return lambda **kwargs: pd.DataFrame({
+                "date": ["2024-01-02", "2024-01-03"],
+                "open": [100, 101], "close": [101, 102],
+                "high": [102, 103], "low": [99, 100], "volume": [1000, 1100],
+            })
+
+    result = source_type(symbol, client=Client()).get_daily()
+    assert result["date"].is_monotonic_increasing
+    assert result.iloc[-1]["daily_return"] == pytest.approx(102 / 101 - 1)
+
+
+def test_global_sina_source_uses_mapped_name():
+    class Client:
+        def index_global_hist_sina(self, **kwargs):
+            assert kwargs["symbol"] == "日经225指数"
+            return pd.DataFrame({
+                "date": ["2024-01-02"], "open": [100], "close": [101],
+                "high": [102], "low": [99], "volume": [1000],
+            })
+
+    result = AKShareGlobalSinaDataSource("日经225指数", client=Client()).get_daily()
+    assert result.iloc[0]["close"] == 101
 
 
 def test_validation_rejects_duplicate_dates():

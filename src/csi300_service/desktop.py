@@ -52,8 +52,9 @@ COLORS = dict(THEMES[DEFAULT_THEME])
 PERIODS = {"半年": 120, "1年": 250, "2年": 500, "4年": 1000}
 DATA_SOURCES = {
     "自动": "auto", "BaoStock": "baostock", "腾讯": "tencent",
-    "东方财富": "eastmoney", "Tushare": "tushare", "仅本地": "local",
+    "东方财富": "eastmoney", "新浪全球": "sina", "Tushare": "tushare", "仅本地": "local",
 }
+MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本", "UK": "英国", "DE": "德国", "EU": "欧洲"}
 
 
 def combobox_popup_options(colors: dict[str, str]) -> dict[str, object]:
@@ -248,7 +249,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.11", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.12", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -257,7 +258,7 @@ class MarketDesktopApp:
         selectors = tk.Frame(actions, bg=COLORS["panel"])
         selectors.pack(anchor="e", pady=(0, 8))
         self.symbol_choices = {
-            f"{item.name}  ·  {(item.provider_code or item.symbol).split('.')[0]}": item.symbol
+            f"[{MARKET_LABELS.get(item.market.upper(), item.market.upper())}]  {item.name}  ·  {item.provider_code or item.symbol}": item.symbol
             for item in self.instruments
         }
         names = list(self.symbol_choices)

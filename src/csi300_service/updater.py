@@ -14,8 +14,12 @@ from dotenv import load_dotenv
 from .catalog import InstrumentCatalog
 from .data_sources import (
     AKShareEastMoneyDataSource,
+    AKShareGlobalEastMoneyDataSource,
+    AKShareGlobalSinaDataSource,
+    AKShareHKIndexSinaDataSource,
     AKShareIndexZHHistDataSource,
     AKShareTencentDataSource,
+    AKShareUSIndexSinaDataSource,
     BaoStockDataSource,
     CsvDataSource,
     MarketDataSource,
@@ -90,10 +94,13 @@ class MarketDataUpdater:
         self.tencent_code = self.instrument.tencent_code
         self.eastmoney_code = self.instrument.eastmoney_code
         self.zh_index_code = self.instrument.zh_index_code
+        self.global_name = self.instrument.global_name
+        self.sina_code = self.instrument.sina_code
+        self.market = self.instrument.market.upper()
         self.remote_source = remote_source
         self.source_mode = (source_mode or os.getenv("DATA_SOURCE", "auto")).strip().lower()
-        if self.source_mode not in {"auto", "baostock", "tencent", "eastmoney", "tushare", "local"}:
-            raise ValueError("DATA_SOURCE 必须是 auto、baostock、tencent、eastmoney、tushare 或 local")
+        if self.source_mode not in {"auto", "baostock", "tencent", "eastmoney", "sina", "tushare", "local"}:
+            raise ValueError("DATA_SOURCE 必须是 auto、baostock、tencent、eastmoney、sina、tushare 或 local")
         self.overlap_trading_days = max(1, overlap_trading_days)
         self.close_tolerance = close_tolerance
 
@@ -209,6 +216,8 @@ class MarketDataUpdater:
                 self.tencent_code, amount_unit=self.instrument.amount_unit
             )
         if mode == "eastmoney":
+            if self.global_name:
+                return "AKShare/Global EastMoney", AKShareGlobalEastMoneyDataSource(self.global_name)
             if self.zh_index_code:
                 return "AKShare/EastMoney", AKShareIndexZHHistDataSource(
                     self.zh_index_code,
@@ -220,6 +229,14 @@ class MarketDataUpdater:
             return "AKShare/EastMoney", AKShareEastMoneyDataSource(
                 self.eastmoney_code, amount_unit=self.instrument.amount_unit
             )
+        if mode == "sina":
+            if not self.sina_code:
+                raise DataUpdateError("该标的未配置新浪指数代码")
+            if self.market == "US":
+                return "AKShare/US Sina", AKShareUSIndexSinaDataSource(self.sina_code)
+            if self.market == "HK":
+                return "AKShare/HK Sina", AKShareHKIndexSinaDataSource(self.sina_code)
+            return "AKShare/Global Sina", AKShareGlobalSinaDataSource(self.sina_code)
         if mode == "tushare":
             if not self.provider_code:
                 raise DataUpdateError("该标的未配置 Tushare 代码")

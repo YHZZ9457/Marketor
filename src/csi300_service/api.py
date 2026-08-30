@@ -13,13 +13,13 @@ from .events import EventBacktester
 from .service import MarketService
 from .statistics import statistics_methods
 
-app = FastAPI(title="Market Analysis Service", version="0.11.0")
+app = FastAPI(title="Market Analysis Service", version="0.12.0")
 catalog = InstrumentCatalog()
 web_dir = Path(__file__).resolve().parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=64)
 def _service(symbol: str) -> MarketService:
     try:
         return MarketService(symbol, catalog=catalog)

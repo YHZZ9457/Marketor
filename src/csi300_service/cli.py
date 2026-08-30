@@ -91,7 +91,7 @@ def events(
 @app.command()
 def update(
     symbol: str = typer.Option("csi300", help="标的代码"),
-    source: str | None = typer.Option(None, help="数据源：auto、baostock、tencent、eastmoney、tushare、local"),
+    source: str | None = typer.Option(None, help="数据源：auto、baostock、tencent、eastmoney、sina、tushare、local"),
     strict: bool = typer.Option(False, help="在线更新失败时返回错误，而不是回退本地数据"),
 ):
     """按所选数据源增量更新行情；失败时默认继续使用本地 CSV。"""
@@ -153,7 +153,7 @@ def source_meta(symbol: str = typer.Option("csi300", help="标的代码")):
 @app.command(hidden=True)
 def bootstrap(
     symbol: str = typer.Option(..., help="待初始化的标的代码"),
-    source: str = typer.Option("eastmoney", help="初始化数据源：eastmoney、tencent、baostock 或 tushare"),
+    source: str = typer.Option("eastmoney", help="初始化数据源：eastmoney、sina、tencent、baostock 或 tushare"),
     start: str = typer.Option("2005-01-01", help="历史起始日期"),
     force: bool = typer.Option(False, help="覆盖已经存在的本地行情文件"),
 ):

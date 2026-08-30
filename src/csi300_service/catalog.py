@@ -20,6 +20,9 @@ class Instrument:
     tencent_code: str | None = None
     eastmoney_code: str | None = None
     zh_index_code: str | None = None
+    global_name: str | None = None
+    sina_code: str | None = None
+    market: str = "CN"
     source_priority: tuple[str, ...] = ("eastmoney", "tencent", "baostock", "tushare")
     amount_unit: str = "CNY_THOUSAND"
 
@@ -76,6 +79,9 @@ class InstrumentCatalog:
                 tencent_code=item.get("tencent_code"),
                 eastmoney_code=item.get("eastmoney_code"),
                 zh_index_code=item.get("zh_index_code"),
+                global_name=item.get("global_name"),
+                sina_code=item.get("sina_code"),
+                market=item.get("market", "CN"),
                 source_priority=tuple(item.get("source_priority", ("eastmoney", "tencent", "baostock", "tushare"))),
                 amount_unit=item.get("amount_unit", "CNY_THOUSAND"),
             )

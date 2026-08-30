@@ -1,5 +1,5 @@
 #define MyAppName "Marketor 市场航图"
-#define MyAppVersion "0.11.0"
+#define MyAppVersion "0.12.0"
 #define MyAppPublisher "YHZZ9457"
 #define MyAppExeName "Marketor.exe"
 
