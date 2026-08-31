@@ -18,6 +18,7 @@ from .events import EventBacktester
 from .online_custom import ONLINE_TYPE_LABELS, OnlineCustomInstrumentManager, OnlineImportResult
 from .service import MarketService
 from .updater import MarketDataUpdater, UpdateResult
+from .data_sources import HITHINK_API_KEY_ENV, hithink_api_key
 
 
 THEMES = {
@@ -55,11 +56,36 @@ COLORS = dict(THEMES[DEFAULT_THEME])
 
 PERIODS = {"半年": 120, "1年": 250, "2年": 500, "4年": 1000}
 DATA_SOURCES = {
-    "自动": "auto", "BaoStock": "baostock", "腾讯": "tencent",
+    "自动": "auto", "同花顺官方": "hithink", "BaoStock": "baostock", "腾讯": "tencent",
     "东方财富": "eastmoney", "新浪全球": "sina", "Tushare": "tushare", "仅本地": "local",
 }
 MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本", "UK": "英国", "DE": "德国", "EU": "欧洲", "CUSTOM": "自定义"}
 ASSET_CLASS_LABELS = {"index": "指数", "stock": "股票", "fund": "基金"}
+
+
+def save_hithink_api_key(value: str) -> bool:
+    """Save the key for this process and, on Windows, the current user only."""
+    key = value.strip()
+    if key:
+        os.environ[HITHINK_API_KEY_ENV] = key
+    else:
+        os.environ.pop(HITHINK_API_KEY_ENV, None)
+    if os.name != "nt":
+        return False
+    import winreg
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Environment") as registry_key:
+        if key:
+            winreg.SetValueEx(registry_key, HITHINK_API_KEY_ENV, 0, winreg.REG_SZ, key)
+        else:
+            try:
+                winreg.DeleteValue(registry_key, HITHINK_API_KEY_ENV)
+            except FileNotFoundError:
+                pass
+    try:
+        ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, None)
+    except (AttributeError, OSError):
+        pass
+    return True
 
 
 def combobox_popup_options(colors: dict[str, str]) -> dict[str, object]:
@@ -265,7 +291,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.14.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.15.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -289,6 +315,8 @@ class MarketDesktopApp:
         import_button.pack(side="left", padx=(0, 8))
         online_add_button = tk.Button(buttons, text="⌕  联网添加", command=self.add_online_instrument, bg=COLORS["rank_button"], fg=COLORS["gold"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         online_add_button.pack(side="left", padx=(0, 8))
+        api_key_button = tk.Button(buttons, text="⚿  API Key", command=self.configure_api_key, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        api_key_button.pack(side="left", padx=(0, 8))
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         self.update_button.pack(side="left", padx=(0, 8))
         rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -572,6 +600,54 @@ class MarketDesktopApp:
         self.provider_status = "当前数据源：自定义本地 CSV · 在线状态：仅本地"
         self.refresh()
 
+    def configure_api_key(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("同花顺 API Key · Marketor")
+        window.transient(self.root)
+        window.grab_set()
+        window.resizable(False, False)
+        window.configure(bg=COLORS["bg"])
+        panel = self._panel(window)
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        self._label(panel, "同花顺官方数据源", 17, weight="bold").pack(anchor="w")
+        configured = hithink_api_key() is not None
+        state_text = "已配置，可优先用于中国市场" if configured else "尚未配置"
+        self._label(panel, state_text, 9, COLORS["mint"] if configured else COLORS["gold"]).pack(anchor="w", pady=(3, 14))
+        self._label(panel, "API Key", 9, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 5))
+        value_var = tk.StringVar()
+        entry = tk.Entry(
+            panel, textvariable=value_var, show="●", width=48, bg=COLORS["panel_alt"],
+            fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat",
+            font=("Segoe UI", 10),
+        )
+        entry.pack(fill="x", ipady=8)
+        self._label(
+            panel,
+            "Key 仅写入当前 Windows 用户环境变量，不写入项目、日志或 Git。留空不会覆盖现有 Key。",
+            8, COLORS["muted"], wraplength=460, justify="left",
+        ).pack(anchor="w", pady=(10, 14))
+        actions = tk.Frame(panel, bg=COLORS["panel"])
+        actions.pack(anchor="e")
+
+        def save() -> None:
+            key = value_var.get().strip()
+            if not key:
+                messagebox.showwarning("请输入 API Key", "请粘贴完整的同花顺 API Key。", parent=window)
+                return
+            try:
+                save_hithink_api_key(key)
+            except OSError as exc:
+                messagebox.showerror("保存失败", str(exc), parent=window)
+                return
+            value_var.set("")
+            window.destroy()
+            self.status_var.set("同花顺 API Key 已配置 · 中国市场自动更新将优先尝试官方数据源")
+            messagebox.showinfo("配置完成", "API Key 已保存到当前 Windows 用户环境。", parent=self.root)
+
+        tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
+        tk.Button(actions, text="保存 Key", command=save, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold")).pack(side="left")
+        entry.focus_set()
+
     def add_online_instrument(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("联网查询并添加 · Marketor")
@@ -582,7 +658,7 @@ class MarketDesktopApp:
         panel = self._panel(window)
         panel.pack(fill="both", expand=True, padx=18, pady=18)
         self._label(panel, "联网查询并添加", 17, weight="bold").grid(row=0, column=0, columnspan=2, sticky="w")
-        self._label(panel, "无需 Token · 查询成功后保存为本地 CSV", 9, COLORS["cyan"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
+        self._label(panel, "同花顺 API Key 可选 · 查询成功后保存为本地 CSV", 9, COLORS["cyan"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
 
         type_labels = list(ONLINE_TYPE_LABELS.values())
         type_codes = {label: code for code, label in ONLINE_TYPE_LABELS.items()}

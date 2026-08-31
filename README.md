@@ -25,7 +25,7 @@
 
 ### Windows 桌面应用（推荐）
 
-普通使用者可直接运行 `installer-output/Marketor-Setup-0.14.0.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
+普通使用者可直接运行 `installer-output/Marketor-Setup-0.15.0.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
 
 ### 联网查询并添加标的
 
@@ -37,6 +37,23 @@
 - 全球股票、ETF 和指数：Yahoo Finance 调整后价格；例如 `AAPL`、`SPY`、`^GSPC`、`0700.HK`
 
 联网添加后的数据仍保存为本地 CSV。再次选择该标的并点击“在线更新”，程序会先完整下载和校验新版历史，成功后才原子替换旧文件；网络失败时继续使用原有本地数据。自定义标的的联网配置和 CSV 均位于 `%LOCALAPPDATA%\Marketor\custom`。
+
+### 同花顺官方中国市场数据源
+
+v0.15.0 起可选用同花顺官方金融数据 API。桌面应用点击右上角“API Key”，粘贴在同花顺 API Key 管理页取得的 Key；程序只保存到当前 Windows 用户的 `HITHINK_FINANCE_API_KEY` 环境变量，不写入项目、日志或 Git。
+
+- 中国指数：官方指数历史 K 线，保持原始点位。
+- A 股：官方历史 K 线，使用前复权口径。
+- 场内 ETF：官方 ETF 日线。
+- “自动”模式在已配置 Key 时优先尝试同花顺，失败后继续尝试原有数据源，最终保留本地 CSV。
+
+也可在启动应用前自行配置：
+
+```powershell
+[Environment]::SetEnvironmentVariable('HITHINK_FINANCE_API_KEY', '你的Key', 'User')
+```
+
+关闭并重新打开应用后生效。不要将 Key 写入仓库文件。
 
 ### 导入自定义指数、股票或基金 CSV
 

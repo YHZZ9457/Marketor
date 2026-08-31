@@ -9,6 +9,7 @@ from .global_index_source import (
     AKShareUSIndexSinaDataSource,
 )
 from .tushare_source import TushareDataSource
+from .hithink_source import HiThinkDataSource, HITHINK_API_KEY_ENV, hithink_api_key, normalize_hithink_code
 from .custom_online_source import (
     AKShareCNStockEastMoneyDataSource,
     AKShareCNStockTencentDataSource,
@@ -19,6 +20,7 @@ from .custom_online_source import (
 __all__ = [
     "AKShareEastMoneyDataSource", "AKShareIndexZHHistDataSource", "AKShareTencentDataSource",
     "BaoStockDataSource", "CsvDataSource", "MarketDataSource", "TushareDataSource",
+    "HiThinkDataSource", "HITHINK_API_KEY_ENV", "hithink_api_key", "normalize_hithink_code",
     "AKShareGlobalEastMoneyDataSource", "AKShareGlobalSinaDataSource", "AKShareHKIndexSinaDataSource", "AKShareUSIndexSinaDataSource",
     "AKShareCNStockEastMoneyDataSource", "AKShareCNStockTencentDataSource",
     "AKShareOpenFundDataSource", "YahooChartDataSource",

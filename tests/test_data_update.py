@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 
 import pandas as pd
@@ -17,6 +18,7 @@ from csi300_service.data_sources import (
     AKShareTencentDataSource,
     AKShareUSIndexSinaDataSource,
     BaoStockDataSource,
+    HiThinkDataSource,
     MarketDataSource,
     TushareDataSource,
 )
@@ -122,6 +124,38 @@ def test_baostock_logs_out_and_normalizes_units():
     assert client.logged_out
     assert result.iloc[0]["amount"] == 2500
     assert result.iloc[0]["daily_return"] == pytest.approx(0.0125)
+
+
+def test_hithink_index_normalizes_official_response_without_leaking_key():
+    payload = {
+        "code": 0, "message": "success", "data": {"adjust": None, "item": [
+            {"date_ms": 1704124800000, "open_price": 100, "high_price": 102,
+             "low_price": 99, "close_price": 101, "turnover": 2_500_000},
+            {"date_ms": 1704211200000, "open_price": 101, "high_price": 103,
+             "low_price": 100, "close_price": 102, "turnover": 3_000_000},
+        ]},
+    }
+
+    def opener(request, timeout):
+        assert timeout == 25
+        assert dict((key.lower(), value) for key, value in request.header_items())["x-api-key"] == "secret-test-key"
+        assert "/api/a-share-index/prices/historical?" in request.full_url
+        assert "thscode=000300.SH" in request.full_url
+        assert "adjust=" not in request.full_url
+        return io.BytesIO(json.dumps(payload).encode())
+
+    result = HiThinkDataSource(
+        "000300.SH", api_key="secret-test-key", amount_scale=0.001, opener=opener,
+    ).get_daily("2024-01-01", "2024-01-04")
+    assert result["date"].dt.strftime("%Y-%m-%d").tolist() == ["2024-01-02", "2024-01-03"]
+    assert result["amount"].tolist() == [2500.0, 3000.0]
+    assert result.iloc[-1]["daily_return"] == pytest.approx(102 / 101 - 1)
+
+
+def test_hithink_requires_key(monkeypatch):
+    monkeypatch.delenv("HITHINK_FINANCE_API_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="HITHINK_FINANCE_API_KEY"):
+        HiThinkDataSource("000300.SH").get_daily("2024-01-01", "2024-01-04")
 
 
 def test_akshare_tencent_normalizes_schema_and_preserves_documented_lots():

@@ -22,8 +22,10 @@ from .data_sources import (
     AKShareUSIndexSinaDataSource,
     BaoStockDataSource,
     CsvDataSource,
+    HiThinkDataSource,
     MarketDataSource,
     TushareDataSource,
+    hithink_api_key,
 )
 from .service import MarketService
 from .validation import validate_market_data
@@ -99,8 +101,8 @@ class MarketDataUpdater:
         self.market = self.instrument.market.upper()
         self.remote_source = remote_source
         self.source_mode = (source_mode or os.getenv("DATA_SOURCE", "auto")).strip().lower()
-        if self.source_mode not in {"auto", "baostock", "tencent", "eastmoney", "sina", "tushare", "local"}:
-            raise ValueError("DATA_SOURCE 必须是 auto、baostock、tencent、eastmoney、sina、tushare 或 local")
+        if self.source_mode not in {"auto", "hithink", "baostock", "tencent", "eastmoney", "sina", "tushare", "local"}:
+            raise ValueError("DATA_SOURCE 必须是 auto、hithink、baostock、tencent、eastmoney、sina、tushare 或 local")
         self.overlap_trading_days = max(1, overlap_trading_days)
         self.close_tolerance = close_tolerance
 
@@ -174,6 +176,8 @@ class MarketDataUpdater:
         else:
             modes = [self.source_mode] if self.source_mode != "auto" else list(self.instrument.source_priority)
             load_dotenv()
+            if self.source_mode == "auto" and self.market == "CN" and hithink_api_key() and "hithink" not in modes:
+                modes.insert(0, "hithink")
             for mode in modes:
                 if mode == "tushare" and not os.getenv("TUSHARE_TOKEN"):
                     continue
@@ -205,6 +209,16 @@ class MarketDataUpdater:
         )
 
     def _create_source(self, mode: str) -> tuple[str, MarketDataSource]:
+        if mode == "hithink":
+            if not self.provider_code:
+                raise DataUpdateError("该标的未配置同花顺代码")
+            if self.market != "CN":
+                raise DataUpdateError("同花顺数据源当前仅用于中国市场")
+            scale = 0.001 if self.instrument.amount_unit == "CNY_THOUSAND" else 1.0
+            return "同花顺官方 API", HiThinkDataSource(
+                self.provider_code, asset_type="index" if self.instrument.asset_class == "index" else "stock",
+                amount_scale=scale,
+            )
         if mode == "baostock":
             if not self.baostock_code:
                 raise DataUpdateError("该标的未配置 BaoStock 代码")

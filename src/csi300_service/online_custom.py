@@ -15,7 +15,10 @@ from .data_sources import (
     AKShareOpenFundDataSource,
     AKShareTencentDataSource,
     BaoStockDataSource,
+    HiThinkDataSource,
     YahooChartDataSource,
+    hithink_api_key,
+    normalize_hithink_code,
 )
 
 
@@ -61,21 +64,26 @@ class OnlineMarketGateway:
         attempts: list[str] = []
         if online_type == "cn_stock":
             plain, baostock_code, tencent_code = normalize_cn_provider_code(provider_code)
-            candidates = (
+            candidates: tuple[tuple[str, Any], ...] = (
                 ("BaoStock（前复权）", BaoStockDataSource(baostock_code, adjustflag="2")),
                 ("腾讯（前复权）", AKShareCNStockTencentDataSource(tencent_code)),
                 ("东方财富（前复权）", AKShareCNStockEastMoneyDataSource(plain)),
             )
+            if hithink_api_key():
+                asset_type = "etf" if plain[0] in "15" else "stock"
+                candidates = (("同花顺官方 API", HiThinkDataSource(normalize_hithink_code(provider_code), asset_type=asset_type)), *candidates)
             frame, provider = self._first_available(candidates, start_date, end_date, attempts)
             name = self._baostock_name(baostock_code) or plain
             return frame, {"name": name, "currency": "CNY", "market": "CN", "asset_class": "stock", "adjustment": "qfq"}, provider, tuple(attempts)
         if online_type == "cn_index":
             plain, baostock_code, tencent_code = normalize_cn_provider_code(provider_code)
-            candidates = (
+            candidates: tuple[tuple[str, Any], ...] = (
                 ("BaoStock（指数原始点位）", BaoStockDataSource(baostock_code, adjustflag="3")),
                 ("腾讯指数", AKShareTencentDataSource(tencent_code, amount_unit="LOTS")),
                 ("东方财富指数", AKShareIndexZHHistDataSource(plain, eastmoney_code=tencent_code)),
             )
+            if hithink_api_key():
+                candidates = (("同花顺官方 API", HiThinkDataSource(normalize_hithink_code(provider_code), asset_type="index")), *candidates)
             frame, provider = self._first_available(candidates, start_date, end_date, attempts)
             name = self._baostock_name(baostock_code) or plain
             return frame, {"name": name, "currency": "CNY", "market": "CN", "asset_class": "index", "adjustment": "none"}, provider, tuple(attempts)
