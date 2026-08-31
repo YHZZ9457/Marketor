@@ -23,7 +23,7 @@ a = Analysis(
     ["packaging/marketor_entry.py"],
     pathex=["src"],
     binaries=ak_binaries + bs_binaries + tk_binaries,
-    datas=[("data", "data")] + ak_datas + bs_datas + tk_datas,
+    datas=[("data", "data"), ("assets/app-icon.ico", "assets")] + ak_datas + bs_datas + tk_datas,
     hiddenimports=ak_hiddenimports + bs_hiddenimports + ["tkinter", "tkinter.ttk", "tkinter.messagebox", "_tkinter"],
     hookspath=[],
     hooksconfig={},
@@ -50,6 +50,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="assets/app-icon.ico",
 )
 
 coll = COLLECT(

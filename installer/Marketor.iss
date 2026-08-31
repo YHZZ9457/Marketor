@@ -1,5 +1,5 @@
 #define MyAppName "Marketor 市场航图"
-#define MyAppVersion "0.12.0"
+#define MyAppVersion "0.12.1"
 #define MyAppPublisher "YHZZ9457"
 #define MyAppExeName "Marketor.exe"
 
@@ -20,6 +20,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile=..\assets\app-icon.ico
 
 [Files]
 Source: "..\dist\Marketor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

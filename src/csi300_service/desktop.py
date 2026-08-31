@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -101,6 +102,12 @@ def calculate_window_size(screen_width: int, screen_height: int, scale: float) -
 def _theme_settings_path() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "MarketCompass"
     return base / "settings.json"
+
+
+def _app_icon_path() -> Path:
+    """Locate the bundled Windows icon in source and PyInstaller builds."""
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
+    return bundle_root / "assets" / "app-icon.ico"
 
 
 def load_theme() -> str:
@@ -213,6 +220,9 @@ class MarketDesktopApp:
 
     def _configure_window(self) -> None:
         self.root.title("市场航图 · 本地行情分析")
+        icon_path = _app_icon_path()
+        if icon_path.exists():
+            self.root.iconbitmap(default=str(icon_path))
         screen_width, screen_height = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         width, height = calculate_window_size(screen_width, screen_height, self.ui_scale)
         left, top = max(0, (screen_width - width) // 2), max(0, (screen_height - height) // 2)
@@ -249,7 +259,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.12", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.12.1", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 

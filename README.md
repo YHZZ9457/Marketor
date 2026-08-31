@@ -25,7 +25,7 @@
 
 ### Windows 桌面应用（推荐）
 
-普通使用者可直接运行 `installer-output/Marketor-Setup-0.12.0.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
+普通使用者可直接运行 `installer-output/Marketor-Setup-0.12.1.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
 
 开发环境仍可双击项目根目录的 `launch-app.cmd`。应用会打开独立的 Windows 窗口，不需要浏览器或本地网址。首次启动会在项目内创建 `.venv` 并安装依赖。
 
