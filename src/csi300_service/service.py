@@ -7,7 +7,8 @@ from .catalog import Instrument, InstrumentCatalog
 from .data import load_data
 from .indicators import add_indicators
 from .statistics import statistics_methods, summarize_returns
-from .strategy import evaluate
+from .strategy import evaluate, evaluate_adaptive
+from .ai_strategy import load_strategy_profile
 
 
 class MarketService:
@@ -57,6 +58,9 @@ class MarketService:
     def signal(self) -> dict:
         latest = self._row_to_dict(self.df.iloc[-1])
         previous = self._row_to_dict(self.df.iloc[-2]) if len(self.df) > 1 else None
+        profile = load_strategy_profile(self.instrument.symbol)
+        if profile is not None and profile.active:
+            return evaluate_adaptive(latest, profile.to_dict(), previous)
         return evaluate(latest, previous)
 
     def holding_returns(

@@ -19,6 +19,10 @@ from .online_custom import ONLINE_TYPE_LABELS, OnlineCustomInstrumentManager, On
 from .service import MarketService
 from .updater import MarketDataUpdater, UpdateResult
 from .data_sources import HITHINK_API_KEY_ENV, hithink_api_key
+from .ai_strategy import (
+    DEEPSEEK_API_KEY_ENV, InstrumentStrategyOptimizer, OpenAICompatibleJSONClient,
+    load_strategy_profile, set_strategy_profile_active,
+)
 
 
 THEMES = {
@@ -63,22 +67,22 @@ MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本",
 ASSET_CLASS_LABELS = {"index": "指数", "stock": "股票", "fund": "基金"}
 
 
-def save_hithink_api_key(value: str) -> bool:
-    """Save the key for this process and, on Windows, the current user only."""
+def save_user_api_key(variable_name: str, value: str) -> bool:
+    """Save an API key for this process and, on Windows, the current user only."""
     key = value.strip()
     if key:
-        os.environ[HITHINK_API_KEY_ENV] = key
+        os.environ[variable_name] = key
     else:
-        os.environ.pop(HITHINK_API_KEY_ENV, None)
+        os.environ.pop(variable_name, None)
     if os.name != "nt":
         return False
     import winreg
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, "Environment") as registry_key:
         if key:
-            winreg.SetValueEx(registry_key, HITHINK_API_KEY_ENV, 0, winreg.REG_SZ, key)
+            winreg.SetValueEx(registry_key, variable_name, 0, winreg.REG_SZ, key)
         else:
             try:
-                winreg.DeleteValue(registry_key, HITHINK_API_KEY_ENV)
+                winreg.DeleteValue(registry_key, variable_name)
             except FileNotFoundError:
                 pass
     try:
@@ -86,6 +90,10 @@ def save_hithink_api_key(value: str) -> bool:
     except (AttributeError, OSError):
         pass
     return True
+
+
+def save_hithink_api_key(value: str) -> bool:
+    return save_user_api_key(HITHINK_API_KEY_ENV, value)
 
 
 def combobox_popup_options(colors: dict[str, str]) -> dict[str, object]:
@@ -291,7 +299,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.15.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.16.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -317,6 +325,8 @@ class MarketDesktopApp:
         online_add_button.pack(side="left", padx=(0, 8))
         api_key_button = tk.Button(buttons, text="⚿  API Key", command=self.configure_api_key, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         api_key_button.pack(side="left", padx=(0, 8))
+        ai_button = tk.Button(buttons, text="✦  AI 策略", command=self.open_ai_strategy, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        ai_button.pack(side="left", padx=(0, 8))
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         self.update_button.pack(side="left", padx=(0, 8))
         rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -647,6 +657,123 @@ class MarketDesktopApp:
         tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
         tk.Button(actions, text="保存 Key", command=save, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold")).pack(side="left")
         entry.focus_set()
+
+    def open_ai_strategy(self) -> None:
+        instrument = self.catalog.get(self.current_symbol)
+        window = tk.Toplevel(self.root)
+        window.title(f"AI 个性化策略 · {instrument.name}")
+        window.transient(self.root)
+        window.grab_set()
+        window.resizable(False, False)
+        window.configure(bg=COLORS["bg"])
+        panel = self._panel(window)
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        self._label(panel, f"{instrument.name} · 个性化策略", 17, weight="bold").grid(row=0, column=0, columnspan=2, sticky="w")
+        current = load_strategy_profile(instrument.symbol)
+        state = "已有生效策略，可重新优化" if current and current.active else "尚未应用个性化策略"
+        self._label(panel, state, 9, COLORS["mint"] if current else COLORS["gold"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
+
+        provider_var = tk.StringVar(value="DeepSeek")
+        key_var = tk.StringVar()
+        base_url_var = tk.StringVar(value="https://api.deepseek.com")
+        model_var = tk.StringVar(value="deepseek-v4-flash")
+        status_var = tk.StringVar(value="AI 只接收训练区间统计摘要；候选参数由本地样本外回测筛选。")
+
+        def label_at(row: int, text: str) -> None:
+            self._label(panel, text, 9, COLORS["muted"], "bold").grid(row=row, column=0, sticky="w", padx=(0, 16), pady=6)
+
+        def entry_at(row: int, variable: tk.StringVar, *, secret: bool = False) -> tk.Entry:
+            entry = tk.Entry(panel, textvariable=variable, show="●" if secret else "", width=43, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", font=("Segoe UI", 10))
+            entry.grid(row=row, column=1, sticky="ew", pady=6, ipady=7)
+            return entry
+
+        label_at(2, "AI 服务")
+        provider_box = ttk.Combobox(panel, textvariable=provider_var, values=["DeepSeek", "OpenAI 兼容接口"], state="readonly", width=40, style="Toolbar.TCombobox")
+        provider_box.grid(row=2, column=1, sticky="ew", pady=6)
+        label_at(3, "API Key")
+        key_entry = entry_at(3, key_var, secret=True)
+        label_at(4, "Base URL")
+        entry_at(4, base_url_var)
+        label_at(5, "模型")
+        entry_at(5, model_var)
+        self._label(panel, "约束：核心仓位≥60% · 最大加仓3× · 最大技术减仓40% · 指标定义不变", 8, COLORS["cyan"], wraplength=500, justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(10, 4))
+        self._label(panel, "", 8, COLORS["gold"], wraplength=500, justify="left", textvariable=status_var).grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        actions = tk.Frame(panel, bg=COLORS["panel"])
+        actions.grid(row=8, column=0, columnspan=2, sticky="e")
+
+        def provider_changed(_event: Any = None) -> None:
+            if provider_var.get() == "DeepSeek":
+                base_url_var.set("https://api.deepseek.com")
+                model_var.set("deepseek-v4-flash")
+            else:
+                base_url_var.set("https://api.openai.com/v1")
+                model_var.set("")
+
+        provider_box.bind("<<ComboboxSelected>>", provider_changed)
+
+        def submit() -> None:
+            env_name = DEEPSEEK_API_KEY_ENV if provider_var.get() == "DeepSeek" else "MARKETOR_AI_API_KEY"
+            key = key_var.get().strip() or os.getenv(env_name, "").strip()
+            if not key:
+                messagebox.showwarning("需要 API Key", "请粘贴当前 AI 服务的 API Key。", parent=window)
+                return
+            if not base_url_var.get().strip() or not model_var.get().strip():
+                messagebox.showwarning("配置不完整", "Base URL 和模型名称不能为空。", parent=window)
+                return
+            save_user_api_key(env_name, key)
+            key_var.set("")
+            optimize_button.configure(state="disabled")
+            status_var.set("正在请求 AI 候选，并执行本地样本外回测…")
+            client = OpenAICompatibleJSONClient(api_key=key, base_url=base_url_var.get(), model=model_var.get())
+
+            def worker() -> None:
+                try:
+                    profile = InstrumentStrategyOptimizer(instrument.symbol, catalog=self.catalog).optimize(
+                        client=client, provider_name=provider_var.get(), apply=True,
+                    )
+                    self.root.after(0, finish, profile)
+                except Exception as exc:
+                    self.root.after(0, failed, str(exc))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def finish(profile: Any) -> None:
+            window.destroy()
+            metrics = profile.validation
+            self.refresh()
+            messagebox.showinfo(
+                "AI 策略已验证并应用",
+                f"标的：{profile.name}\n来源：{profile.source} · {profile.model}\n"
+                f"样本外 CAGR：{metrics.get('cagr', 0):+.2%}\n"
+                f"最大回撤：{metrics.get('max_drawdown', 0):+.2%}\n"
+                f"Sharpe：{metrics.get('sharpe', 0):.2f}\n\n"
+                f"加仓阈值：{', '.join(f'{x:+.1%}' for x in profile.buy_bias_levels)}\n"
+                f"减仓阈值：{', '.join(f'{x:+.1%}' for x in profile.sell_bias_levels)}\n\n"
+                "该结果仅为历史研究与辅助决策，不保证未来收益。",
+                parent=self.root,
+            )
+
+        def failed(message: str) -> None:
+            optimize_button.configure(state="normal")
+            status_var.set(f"优化失败：{message}")
+
+        def restore_default() -> None:
+            if not current:
+                return
+            if not messagebox.askyesno("恢复全局策略", "停用该标的的个性化阈值，恢复项目默认策略？", parent=window):
+                return
+            set_strategy_profile_active(instrument.symbol, False)
+            window.destroy()
+            self.refresh()
+            messagebox.showinfo("已恢复", f"{instrument.name} 已恢复全局默认策略。", parent=self.root)
+
+        tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
+        restore_button = tk.Button(actions, text="恢复全局策略", command=restore_default, state="normal" if current and current.active else "disabled", bg=COLORS["button"], fg=COLORS["coral"], relief="flat", padx=16, pady=7)
+        restore_button.pack(side="left", padx=(0, 8))
+        optimize_button = tk.Button(actions, text="AI 优化并应用", command=submit, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold"))
+        optimize_button.pack(side="left")
+        panel.grid_columnconfigure(1, weight=1)
+        key_entry.focus_set()
 
     def add_online_instrument(self) -> None:
         window = tk.Toplevel(self.root)

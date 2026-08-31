@@ -68,7 +68,7 @@ def test_unknown_statistics_method():
 
 
 def test_bundled_catalog_includes_verified_new_indices():
-    catalog = InstrumentCatalog()
+    catalog = InstrumentCatalog(default_data_dir() / "instruments.json")
     assert len(catalog.list()) == 31
     assert len(catalog.list(include_unavailable=False)) == 25
     assert catalog.get("sse_composite").tencent_code == "sh000001"
