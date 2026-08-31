@@ -49,6 +49,15 @@ def default_data_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "data"
 
 
+def user_storage_dir() -> Path:
+    """Writable storage for user-defined instruments in source and packaged builds."""
+    return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "Marketor"
+
+
+def custom_catalog_path() -> Path:
+    return user_storage_dir() / "custom" / "instruments.json"
+
+
 class InstrumentCatalog:
     """File-backed instrument registry.
 
@@ -56,11 +65,25 @@ class InstrumentCatalog:
     API and CLI code do not need to change.
     """
 
-    def __init__(self, config_path: str | Path | None = None):
+    def __init__(
+        self,
+        config_path: str | Path | None = None,
+        *,
+        custom_config_path: str | Path | None = None,
+    ):
         self.config_path = Path(config_path) if config_path else default_data_dir() / "instruments.json"
-        payload = json.loads(self.config_path.read_text(encoding="utf-8"))
-        base_dir = self.config_path.parent.resolve()
         self._items: dict[str, Instrument] = {}
+        self._load_config(self.config_path)
+        if config_path is None:
+            custom_path = Path(custom_config_path) if custom_config_path else custom_catalog_path()
+            if custom_path.exists():
+                self._load_config(custom_path)
+        if not self._items:
+            raise ValueError("Instrument catalog is empty")
+
+    def _load_config(self, config_path: Path) -> None:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        base_dir = config_path.parent.resolve()
         for item in payload.get("instruments", []):
             symbol = str(item["symbol"]).strip().lower()
             if not symbol or symbol in self._items:
@@ -85,8 +108,6 @@ class InstrumentCatalog:
                 source_priority=tuple(item.get("source_priority", ("eastmoney", "tencent", "baostock", "tushare"))),
                 amount_unit=item.get("amount_unit", "CNY_THOUSAND"),
             )
-        if not self._items:
-            raise ValueError("Instrument catalog is empty")
 
     def get(self, symbol: str = "csi300") -> Instrument:
         key = symbol.strip().lower()

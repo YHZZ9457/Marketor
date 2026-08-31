@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import ctypes
+from datetime import datetime
 import json
 import os
 import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from .catalog import InstrumentCatalog
 from .comparison import MarketComparisonService
+from .custom_instruments import CustomInstrumentManager, normalize_symbol
 from .events import EventBacktester
 from .service import MarketService
 from .updater import MarketDataUpdater, UpdateResult
@@ -55,7 +57,8 @@ DATA_SOURCES = {
     "自动": "auto", "BaoStock": "baostock", "腾讯": "tencent",
     "东方财富": "eastmoney", "新浪全球": "sina", "Tushare": "tushare", "仅本地": "local",
 }
-MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本", "UK": "英国", "DE": "德国", "EU": "欧洲"}
+MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本", "UK": "英国", "DE": "德国", "EU": "欧洲", "CUSTOM": "自定义"}
+ASSET_CLASS_LABELS = {"index": "指数", "stock": "股票", "fund": "基金"}
 
 
 def combobox_popup_options(colors: dict[str, str]) -> dict[str, object]:
@@ -204,6 +207,7 @@ class MarketDesktopApp:
         COLORS.clear()
         COLORS.update(THEMES[self.theme_name])
         self.catalog = InstrumentCatalog()
+        self.custom_manager = CustomInstrumentManager()
         self.instruments = self.catalog.list(include_unavailable=False)
         self.current_symbol = self.instruments[0].symbol
         self.provider_status = "当前数据源：本地 CSV · 在线状态：待检查"
@@ -259,7 +263,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.12.1", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.13.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -267,13 +271,10 @@ class MarketDesktopApp:
         actions.pack(side="right", anchor="center")
         selectors = tk.Frame(actions, bg=COLORS["panel"])
         selectors.pack(anchor="e", pady=(0, 8))
-        self.symbol_choices = {
-            f"[{MARKET_LABELS.get(item.market.upper(), item.market.upper())}]  {item.name}  ·  {item.provider_code or item.symbol}": item.symbol
-            for item in self.instruments
-        }
+        self.symbol_choices = self._build_symbol_choices()
         names = list(self.symbol_choices)
         self.symbol_var = tk.StringVar(value=names[0])
-        self._selector_control(selectors, "指数", self.symbol_var, names, 21, self._on_symbol_change)
+        self.symbol_box = self._selector_control(selectors, "标的", self.symbol_var, names, 23, self._on_symbol_change)
         self.period_var = tk.StringVar(value="1年")
         self._selector_control(selectors, "图表周期", self.period_var, list(PERIODS), 7, lambda _event: self.refresh())
         self.source_var = tk.StringVar(value="自动")
@@ -282,6 +283,8 @@ class MarketDesktopApp:
         self._selector_control(selectors, "主题", self.theme_var, list(THEMES), 10, self._on_theme_change, last=True)
         buttons = tk.Frame(actions, bg=COLORS["panel"])
         buttons.pack(anchor="e")
+        import_button = tk.Button(buttons, text="＋  导入 CSV", command=self.import_local_csv, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        import_button.pack(side="left", padx=(0, 8))
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         self.update_button.pack(side="left", padx=(0, 8))
         rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -458,6 +461,113 @@ class MarketDesktopApp:
         self.current_symbol = self.symbol_choices[self.symbol_var.get()]
         self.refresh()
 
+    def _build_symbol_choices(self) -> dict[str, str]:
+        return {
+            (
+                f"[{MARKET_LABELS.get(item.market.upper(), item.market.upper())}·"
+                f"{ASSET_CLASS_LABELS.get(item.asset_class, item.asset_class)}]  "
+                f"{item.name}  ·  {item.provider_code or item.symbol}"
+            ): item.symbol
+            for item in self.instruments
+        }
+
+    def import_local_csv(self) -> None:
+        source = filedialog.askopenfilename(
+            parent=self.root,
+            title="选择本地行情 CSV",
+            filetypes=(("CSV 文件", "*.csv"), ("所有文件", "*.*")),
+        )
+        if not source:
+            return
+        self._show_import_dialog(Path(source))
+
+    def _show_import_dialog(self, source: Path) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("导入自定义标的 · Marketor")
+        window.transient(self.root)
+        window.grab_set()
+        window.resizable(False, False)
+        window.configure(bg=COLORS["bg"])
+        panel = self._panel(window)
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        self._label(panel, "导入本地 CSV", 17, weight="bold").grid(row=0, column=0, columnspan=2, sticky="w")
+        self._label(panel, source.name, 9, COLORS["cyan"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
+
+        try:
+            default_symbol = normalize_symbol(source.stem)
+        except ValueError:
+            default_symbol = f"custom_{datetime.now():%Y%m%d_%H%M%S}"
+        name_var = tk.StringVar(value=source.stem)
+        symbol_var = tk.StringVar(value=default_symbol)
+        type_var = tk.StringVar(value="指数")
+        market_var = tk.StringVar(value="CUSTOM")
+        currency_var = tk.StringVar(value="CNY")
+
+        def add_entry(row: int, label: str, variable: tk.StringVar) -> tk.Entry:
+            self._label(panel, label, 9, COLORS["muted"], "bold").grid(row=row, column=0, sticky="w", padx=(0, 16), pady=6)
+            entry = tk.Entry(panel, textvariable=variable, width=34, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", font=("Microsoft YaHei UI", 10))
+            entry.grid(row=row, column=1, sticky="ew", pady=6, ipady=7)
+            return entry
+
+        name_entry = add_entry(2, "名称", name_var)
+        add_entry(3, "代码（唯一）", symbol_var)
+        self._label(panel, "类型", 9, COLORS["muted"], "bold").grid(row=4, column=0, sticky="w", padx=(0, 16), pady=6)
+        type_box = ttk.Combobox(panel, textvariable=type_var, values=["指数", "股票", "基金"], state="readonly", width=31, style="Toolbar.TCombobox")
+        type_box.grid(row=4, column=1, sticky="ew", pady=6)
+        add_entry(5, "市场", market_var)
+        add_entry(6, "币种", currency_var)
+        hint = "支持 date/日期、close/收盘价/单位净值；开高低和成交额可选。"
+        self._label(panel, hint, 8, COLORS["muted"], wraplength=390, justify="left").grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 12))
+        actions = tk.Frame(panel, bg=COLORS["panel"])
+        actions.grid(row=8, column=0, columnspan=2, sticky="e")
+
+        def submit() -> None:
+            type_codes = {"指数": "index", "股票": "stock", "基金": "fund"}
+            kwargs = dict(
+                symbol=symbol_var.get(), name=name_var.get(), asset_class=type_codes[type_var.get()],
+                market=market_var.get(), currency=currency_var.get(),
+            )
+            try:
+                instrument = self.custom_manager.import_csv(source, **kwargs)
+            except ValueError as exc:
+                if "已存在" in str(exc) and messagebox.askyesno("覆盖自定义标的", f"{exc}\n\n是否用当前 CSV 替换？", parent=window):
+                    try:
+                        instrument = self.custom_manager.import_csv(source, **kwargs, replace=True)
+                    except Exception as replace_exc:
+                        messagebox.showerror("导入失败", str(replace_exc), parent=window)
+                        return
+                else:
+                    messagebox.showerror("导入失败", str(exc), parent=window)
+                    return
+            except Exception as exc:
+                messagebox.showerror("导入失败", str(exc), parent=window)
+                return
+            window.destroy()
+            self._reload_catalog(instrument.symbol)
+            metadata = MarketService(instrument.symbol, catalog=self.catalog).metadata()
+            messagebox.showinfo(
+                "导入完成",
+                f"已导入：{instrument.name}\n有效记录：{metadata['rows']:,} 条\n"
+                f"日期范围：{metadata['first_date']} 至 {metadata['last_date']}",
+                parent=self.root,
+            )
+
+        tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
+        tk.Button(actions, text="导入并分析", command=submit, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold")).pack(side="left")
+        panel.grid_columnconfigure(1, weight=1)
+        name_entry.focus_set()
+
+    def _reload_catalog(self, selected_symbol: str) -> None:
+        self.catalog = InstrumentCatalog()
+        self.instruments = self.catalog.list(include_unavailable=False)
+        self.symbol_choices = self._build_symbol_choices()
+        self.symbol_box.configure(values=list(self.symbol_choices))
+        selected_name = next(name for name, symbol in self.symbol_choices.items() if symbol == selected_symbol)
+        self.symbol_var.set(selected_name)
+        self.current_symbol = selected_symbol
+        self.provider_status = "当前数据源：自定义本地 CSV · 在线状态：仅本地"
+        self.refresh()
+
     def refresh(self) -> None:
         self.refresh_button.configure(state="disabled")
         self.status_var.set("正在读取本地行情…")
@@ -466,6 +576,9 @@ class MarketDesktopApp:
         threading.Thread(target=self._load_data, args=(symbol, days), daemon=True).start()
 
     def update_online(self) -> None:
+        if not self.catalog.get(self.current_symbol).source_priority:
+            messagebox.showinfo("仅本地数据", "该自定义标的目前使用本地 CSV，不执行在线更新。", parent=self.root)
+            return
         self.update_button.configure(state="disabled")
         self.refresh_button.configure(state="disabled")
         self.status_var.set("正在检查在线增量行情…")
