@@ -16,8 +16,9 @@ class BaoStockDataSource(MarketDataSource):
 
     FIELDS = "date,open,high,low,close,volume,amount,pctChg"
 
-    def __init__(self, code: str = "sh.000300", client: Any | None = None):
+    def __init__(self, code: str = "sh.000300", client: Any | None = None, *, adjustflag: str = "3"):
         self.code = code
+        self.adjustflag = adjustflag
         if client is None:
             try:
                 import baostock as bs
@@ -41,7 +42,7 @@ class BaoStockDataSource(MarketDataSource):
                     start_date=range_start,
                     end_date=range_end,
                     frequency="d",
-                    adjustflag="3",
+                    adjustflag=self.adjustflag,
                 )
                 if str(result.error_code) != "0":
                     raise RuntimeError(f"BaoStock 查询失败：{result.error_msg}")
@@ -49,7 +50,7 @@ class BaoStockDataSource(MarketDataSource):
                 while result.next():
                     rows.append(result.get_row_data())
             if not rows:
-                raise RuntimeError(f"BaoStock 未返回 {self.code} 指数日线数据")
+                raise RuntimeError(f"BaoStock 未返回 {self.code} 日线数据")
             frame = pd.DataFrame(rows, columns=fields)
         finally:
             self.client.logout()

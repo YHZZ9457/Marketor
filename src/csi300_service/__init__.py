@@ -1,6 +1,7 @@
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 from .catalog import Instrument, InstrumentCatalog
 from .custom_instruments import CustomInstrumentManager
+from .online_custom import OnlineCustomInstrumentManager
 from .comparison import MarketComparisonService, allocation_scores
 from .events import EventBacktester
 from .service import CSI300Service, MarketService
@@ -12,6 +13,7 @@ __all__ = [
     "Instrument",
     "InstrumentCatalog",
     "CustomInstrumentManager",
+    "OnlineCustomInstrumentManager",
     "EventBacktester",
     "MarketService",
     "MarketDataUpdater",

@@ -25,6 +25,8 @@ class Instrument:
     market: str = "CN"
     source_priority: tuple[str, ...] = ("eastmoney", "tencent", "baostock", "tushare")
     amount_unit: str = "CNY_THOUSAND"
+    online_source: str | None = None
+    adjustment: str | None = None
 
     @property
     def has_data(self) -> bool:
@@ -107,6 +109,8 @@ class InstrumentCatalog:
                 market=item.get("market", "CN"),
                 source_priority=tuple(item.get("source_priority", ("eastmoney", "tencent", "baostock", "tushare"))),
                 amount_unit=item.get("amount_unit", "CNY_THOUSAND"),
+                online_source=item.get("online_source"),
+                adjustment=item.get("adjustment"),
             )
 
     def get(self, symbol: str = "csi300") -> Instrument:

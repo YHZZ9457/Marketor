@@ -15,6 +15,7 @@ from .catalog import InstrumentCatalog
 from .comparison import MarketComparisonService
 from .custom_instruments import CustomInstrumentManager, normalize_symbol
 from .events import EventBacktester
+from .online_custom import ONLINE_TYPE_LABELS, OnlineCustomInstrumentManager, OnlineImportResult
 from .service import MarketService
 from .updater import MarketDataUpdater, UpdateResult
 
@@ -208,6 +209,7 @@ class MarketDesktopApp:
         COLORS.update(THEMES[self.theme_name])
         self.catalog = InstrumentCatalog()
         self.custom_manager = CustomInstrumentManager()
+        self.online_custom_manager = OnlineCustomInstrumentManager(self.custom_manager)
         self.instruments = self.catalog.list(include_unavailable=False)
         self.current_symbol = self.instruments[0].symbol
         self.provider_status = "当前数据源：本地 CSV · 在线状态：待检查"
@@ -263,7 +265,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.13.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.14.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -285,6 +287,8 @@ class MarketDesktopApp:
         buttons.pack(anchor="e")
         import_button = tk.Button(buttons, text="＋  导入 CSV", command=self.import_local_csv, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         import_button.pack(side="left", padx=(0, 8))
+        online_add_button = tk.Button(buttons, text="⌕  联网添加", command=self.add_online_instrument, bg=COLORS["rank_button"], fg=COLORS["gold"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        online_add_button.pack(side="left", padx=(0, 8))
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         self.update_button.pack(side="left", padx=(0, 8))
         rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -568,6 +572,129 @@ class MarketDesktopApp:
         self.provider_status = "当前数据源：自定义本地 CSV · 在线状态：仅本地"
         self.refresh()
 
+    def add_online_instrument(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("联网查询并添加 · Marketor")
+        window.transient(self.root)
+        window.grab_set()
+        window.resizable(False, False)
+        window.configure(bg=COLORS["bg"])
+        panel = self._panel(window)
+        panel.pack(fill="both", expand=True, padx=18, pady=18)
+        self._label(panel, "联网查询并添加", 17, weight="bold").grid(row=0, column=0, columnspan=2, sticky="w")
+        self._label(panel, "无需 Token · 查询成功后保存为本地 CSV", 9, COLORS["cyan"]).grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 14))
+
+        type_labels = list(ONLINE_TYPE_LABELS.values())
+        type_codes = {label: code for code, label in ONLINE_TYPE_LABELS.items()}
+        type_var = tk.StringVar(value=ONLINE_TYPE_LABELS["cn_stock"])
+        code_var = tk.StringVar(value="600519")
+        symbol_var = tk.StringVar(value="stock_600519")
+        name_var = tk.StringVar(value="")
+        start_var = tk.StringVar(value="2005-01-01")
+
+        def label_at(row: int, text: str) -> None:
+            self._label(panel, text, 9, COLORS["muted"], "bold").grid(row=row, column=0, sticky="w", padx=(0, 16), pady=6)
+
+        def entry_at(row: int, variable: tk.StringVar) -> tk.Entry:
+            entry = tk.Entry(panel, textvariable=variable, width=36, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", font=("Microsoft YaHei UI", 10))
+            entry.grid(row=row, column=1, sticky="ew", pady=6, ipady=7)
+            return entry
+
+        label_at(2, "联网类型")
+        type_box = ttk.Combobox(panel, textvariable=type_var, values=type_labels, state="readonly", width=33, style="Toolbar.TCombobox")
+        type_box.grid(row=2, column=1, sticky="ew", pady=6)
+        label_at(3, "行情代码")
+        code_entry = entry_at(3, code_var)
+        label_at(4, "本地唯一代码")
+        entry_at(4, symbol_var)
+        label_at(5, "显示名称（可留空）")
+        entry_at(5, name_var)
+        label_at(6, "历史起始日期")
+        entry_at(6, start_var)
+        hint_var = tk.StringVar()
+        hint = self._label(panel, "", 8, COLORS["muted"], wraplength=430, justify="left", textvariable=hint_var)
+        hint.grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 8))
+        status_var = tk.StringVar(value="")
+        status = self._label(panel, "", 8, COLORS["gold"], wraplength=430, justify="left", textvariable=status_var)
+        status.grid(row=8, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        actions = tk.Frame(panel, bg=COLORS["panel"])
+        actions.grid(row=9, column=0, columnspan=2, sticky="e")
+
+        examples = {
+            "cn_stock": ("600519", "stock_600519", "示例：600519、000001、510300；股票和场内 ETF 使用前复权价格。"),
+            "cn_index": ("000300", "index_000300", "示例：000300、399006；指数保持原始点位，不做复权。"),
+            "cn_fund": ("000001", "fund_000001", "示例：000001；使用开放式基金单位净值历史。"),
+            "yahoo": ("AAPL", "global_aapl", "示例：AAPL、SPY、^GSPC、0700.HK；使用调整后价格。"),
+        }
+
+        def update_example(_event: Any = None) -> None:
+            kind = type_codes[type_var.get()]
+            code, symbol, message = examples[kind]
+            code_var.set(code)
+            symbol_var.set(symbol)
+            hint_var.set(message)
+
+        type_box.bind("<<ComboboxSelected>>", update_example)
+        update_example()
+
+        def submit() -> None:
+            try:
+                datetime.fromisoformat(start_var.get().strip())
+                local_symbol = normalize_symbol(symbol_var.get())
+            except ValueError as exc:
+                messagebox.showerror("输入有误", f"请使用 YYYY-MM-DD 日期，并检查本地代码。\n{exc}", parent=window)
+                return
+            replace = False
+            try:
+                self.catalog.get(local_symbol)
+            except KeyError:
+                pass
+            else:
+                replace = messagebox.askyesno("标的已存在", f"本地代码 {local_symbol} 已存在，是否替换其行情？", parent=window)
+                if not replace:
+                    return
+            submit_button.configure(state="disabled")
+            status_var.set("正在连接行情源并下载历史数据…")
+            online_type = type_codes[type_var.get()]
+            provider_code = code_var.get()
+            start_date = start_var.get().strip()
+            display_name = name_var.get()
+
+            def worker() -> None:
+                try:
+                    result = self.online_custom_manager.add(
+                        online_type=online_type, provider_code=provider_code,
+                        symbol=local_symbol, start_date=start_date,
+                        name=display_name, replace=replace,
+                    )
+                    self.root.after(0, self._finish_online_add, window, result)
+                except Exception as exc:
+                    self.root.after(0, self._online_add_failed, submit_button, status_var, str(exc))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
+        submit_button = tk.Button(actions, text="查询并添加", command=submit, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold"))
+        submit_button.pack(side="left")
+        panel.grid_columnconfigure(1, weight=1)
+        code_entry.focus_set()
+
+    def _finish_online_add(self, window: tk.Toplevel, result: OnlineImportResult) -> None:
+        window.destroy()
+        self._reload_catalog(result.instrument.symbol)
+        self.provider_status = f"当前数据源：{result.provider} · 在线状态：正常 · 最新交易日：{result.last_date}"
+        messagebox.showinfo(
+            "联网添加完成",
+            f"已添加：{result.instrument.name}\n数据源：{result.provider}\n"
+            f"有效记录：{result.rows:,} 条\n日期范围：{result.first_date} 至 {result.last_date}",
+            parent=self.root,
+        )
+
+    @staticmethod
+    def _online_add_failed(button: tk.Button, status_var: tk.StringVar, message: str) -> None:
+        button.configure(state="normal")
+        status_var.set(f"查询失败：{message}")
+
     def refresh(self) -> None:
         self.refresh_button.configure(state="disabled")
         self.status_var.set("正在读取本地行情…")
@@ -576,7 +703,14 @@ class MarketDesktopApp:
         threading.Thread(target=self._load_data, args=(symbol, days), daemon=True).start()
 
     def update_online(self) -> None:
-        if not self.catalog.get(self.current_symbol).source_priority:
+        instrument = self.catalog.get(self.current_symbol)
+        if instrument.online_source:
+            self.update_button.configure(state="disabled")
+            self.refresh_button.configure(state="disabled")
+            self.status_var.set("正在重新查询自定义标的完整历史…")
+            threading.Thread(target=self._run_custom_online_update, args=(instrument.symbol,), daemon=True).start()
+            return
+        if not instrument.source_priority:
             messagebox.showinfo("仅本地数据", "该自定义标的目前使用本地 CSV，不执行在线更新。", parent=self.root)
             return
         self.update_button.configure(state="disabled")
@@ -584,6 +718,29 @@ class MarketDesktopApp:
         self.status_var.set("正在检查在线增量行情…")
         source_mode = DATA_SOURCES[self.source_var.get()]
         threading.Thread(target=self._run_online_update, args=(self.current_symbol, source_mode), daemon=True).start()
+
+    def _run_custom_online_update(self, symbol: str) -> None:
+        try:
+            result = self.online_custom_manager.refresh(symbol, catalog=self.catalog)
+            self.root.after(0, self._finish_custom_online_update, result)
+        except Exception as exc:
+            self.root.after(0, self._custom_online_update_failed, str(exc))
+
+    def _finish_custom_online_update(self, result: OnlineImportResult) -> None:
+        self.catalog = InstrumentCatalog()
+        self.provider_status = f"当前数据源：{result.provider} · 在线状态：正常 · 最新交易日：{result.last_date}"
+        self.status_var.set(f"联网更新完成 · 共 {result.rows:,} 条记录")
+        self.refresh()
+
+    def _custom_online_update_failed(self, message: str) -> None:
+        self.update_button.configure(state="normal")
+        self.refresh_button.configure(state="normal")
+        self.status_var.set("联网更新失败，继续使用原有本地数据")
+        messagebox.showwarning(
+            "联网更新未完成",
+            f"联网查询失败，原有 CSV 未被覆盖。\n\n{message}",
+            parent=self.root,
+        )
 
     def open_comparison(self) -> None:
         window = tk.Toplevel(self.root)

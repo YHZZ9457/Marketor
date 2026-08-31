@@ -112,6 +112,42 @@ class CustomInstrumentManager:
             raise ValueError("不能覆盖内置标的，请使用其他代码")
 
         frame = normalize_imported_csv(source_path)
+        return self.import_frame(
+            frame, symbol=symbol, name=name, asset_class=asset_class,
+            market=market, currency=currency, replace=replace,
+        )
+
+    def import_frame(
+        self,
+        frame: pd.DataFrame,
+        *,
+        symbol: str,
+        name: str,
+        asset_class: str,
+        market: str = "CUSTOM",
+        currency: str = "CNY",
+        replace: bool = False,
+        online_source: str | None = None,
+        provider_code: str | None = None,
+        adjustment: str | None = None,
+    ) -> Instrument:
+        symbol = normalize_symbol(symbol)
+        name = name.strip()
+        asset_class = asset_class.strip().lower()
+        if not name:
+            raise ValueError("标的名称不能为空")
+        if asset_class not in ASSET_CLASSES:
+            raise ValueError("标的类型必须是 index、stock 或 fund")
+        try:
+            existing = InstrumentCatalog(custom_config_path=self.config_path).get(symbol)
+        except KeyError:
+            existing = None
+        if existing is not None and not replace:
+            raise ValueError(f"标的代码 {symbol!r} 已存在")
+        if existing is not None and self.config_path.parent.resolve() not in existing.data_path.resolve().parents:
+            raise ValueError("不能覆盖内置标的，请使用其他代码")
+
+        frame = self._prepare_frame(frame)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         data_file = f"{symbol}.csv"
         destination = self.data_dir / data_file
@@ -128,10 +164,34 @@ class CustomInstrumentManager:
             "amount_unit": "N/A",
             "data_file": f"data/{data_file}",
         }
+        if online_source:
+            record["online_source"] = online_source
+            record["provider_code"] = provider_code or symbol
+            record["adjustment"] = adjustment
         records = [item for item in payload["instruments"] if str(item.get("symbol", "")).lower() != symbol]
         records.append(record)
         self._write_payload({"instruments": records})
         return InstrumentCatalog(custom_config_path=self.config_path).get(symbol)
+
+    @staticmethod
+    def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        output = frame.copy()
+        if not {"date", "close"} <= set(output.columns):
+            raise ValueError("行情数据至少需要 date 和 close 字段")
+        output["date"] = pd.to_datetime(output["date"], errors="coerce")
+        for column in ["open", "high", "low", "close", "amount"]:
+            if column in output:
+                output[column] = pd.to_numeric(output[column], errors="coerce")
+        output = output.dropna(subset=["date", "close"]).sort_values("date")
+        output = output.drop_duplicates("date", keep="last").reset_index(drop=True)
+        if len(output) < 15:
+            raise ValueError("至少需要 15 条有效记录才能计算基础指标")
+        if (output["close"] <= 0).any():
+            raise ValueError("收盘价/净值必须全部大于 0")
+        output["daily_return"] = output["close"].pct_change()
+        output["return"] = output["daily_return"]
+        output["net_value"] = output["close"] / float(output.iloc[0]["close"])
+        return output
 
     def _read_payload(self) -> dict[str, list[dict[str, Any]]]:
         if not self.config_path.exists():
