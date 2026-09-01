@@ -1,4 +1,4 @@
-__version__ = "0.17.0"
+__version__ = "0.18.0"
 from .catalog import Instrument, InstrumentCatalog
 from .custom_instruments import CustomInstrumentManager
 from .online_custom import OnlineCustomInstrumentManager

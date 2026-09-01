@@ -25,7 +25,7 @@
 
 ### Windows 桌面应用（推荐）
 
-普通使用者可直接运行 `installer-output/Marketor-Setup-0.17.0.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
+普通使用者可直接运行 `installer-output/Marketor-Setup-0.18.0.exe` 完成安装；安装向导会创建开始菜单入口，并可选择创建桌面快捷方式。安装版不要求电脑预先安装 Python，用户可更新的数据会保存在 `%LOCALAPPDATA%\Marketor\data`。
 
 ### 联网查询并添加标的
 
@@ -70,6 +70,8 @@ v0.16.0 起，桌面应用右上角提供“AI 策略”。当前支持 DeepSeek
 不可由 AI 修改的硬约束：核心仓位不低于 60%、最大加仓倍数 3×、最大技术减仓 40%，MA 与 RSI 指标定义保持不变。策略文件保存在 `%LOCALAPPDATA%\Marketor\ai_strategies`；DeepSeek Key 保存在当前 Windows 用户的 `DEEPSEEK_API_KEY` 环境变量，不进入项目或 Git。
 
 ### AI 自由分析对话框
+
+v0.18.0 重新整理了桌面首页：顶部只保留标的、查看范围、更新、自由分析和刷新；加减仓辅助结论集中显示；趋势图与历史收益改为两个标签页。指数排名、添加标的、AI 策略、数据源、主题和 API Key 等低频功能统一收进“更多工具”。
 
 v0.17.0 起，选择任意标的后点击“自由分析”，可以围绕当前行情连续提问。对话框自动提供：
 

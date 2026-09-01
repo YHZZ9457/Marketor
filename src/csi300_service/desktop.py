@@ -64,6 +64,11 @@ DATA_SOURCES = {
     "自动": "auto", "同花顺官方": "hithink", "BaoStock": "baostock", "腾讯": "tencent",
     "东方财富": "eastmoney", "新浪全球": "sina", "Tushare": "tushare", "仅本地": "local",
 }
+TOOL_MENU_GROUPS = {
+    "研究": ("指数排名", "AI 策略优化"),
+    "添加标的": ("联网添加", "导入本地 CSV"),
+    "设置": ("数据源", "主题", "API Key"),
+}
 MARKET_LABELS = {"CN": "中国", "US": "美国", "HK": "香港", "JP": "日本", "UK": "英国", "DE": "德国", "EU": "欧洲", "CUSTOM": "自定义"}
 ASSET_CLASS_LABELS = {"index": "指数", "stock": "股票", "fund": "基金"}
 
@@ -280,6 +285,9 @@ class MarketDesktopApp:
         style.configure("Treeview", background=COLORS["panel"], fieldbackground=COLORS["panel"], foreground=COLORS["text"], rowheight=31, borderwidth=0, font=("Microsoft YaHei UI", 9))
         style.configure("Treeview.Heading", background=COLORS["panel_alt"], foreground=COLORS["muted"], relief="flat", padding=(8, 9), font=("Microsoft YaHei UI", 9, "bold"))
         style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
+        style.configure("Main.TNotebook", background=COLORS["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
+        style.configure("Main.TNotebook.Tab", background=COLORS["panel_alt"], foreground=COLORS["muted"], padding=(18, 9), borderwidth=0, font=("Microsoft YaHei UI", 9, "bold"))
+        style.map("Main.TNotebook.Tab", background=[("selected", COLORS["panel"])], foreground=[("selected", COLORS["mint"])])
 
     def _label(self, parent: tk.Misc, text: str, size: int = 10, color: str | None = None, weight: str = "normal", **kwargs: Any) -> tk.Label:
         return tk.Label(parent, text=text, bg=parent.cget("bg"), fg=color or COLORS["text"], font=("Microsoft YaHei UI", size, weight), **kwargs)
@@ -288,60 +296,65 @@ class MarketDesktopApp:
         return tk.Frame(parent, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1, padx=20, pady=17)
 
     def _build_ui(self) -> None:
-        outer = tk.Frame(self.root, bg=COLORS["bg"], padx=24, pady=20)
+        outer = tk.Frame(self.root, bg=COLORS["bg"], padx=22, pady=18)
         outer.pack(fill="both", expand=True)
 
         accent_line = tk.Frame(outer, bg=COLORS["mint"], height=3)
-        accent_line.pack(fill="x", pady=(0, 14))
-        header = tk.Frame(outer, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1, padx=20, pady=15)
-        header.pack(fill="x", pady=(0, 16))
+        accent_line.pack(fill="x", pady=(0, 12))
+        header = tk.Frame(outer, bg=COLORS["bg"])
+        header.pack(fill="x", pady=(0, 12))
         title_block = tk.Frame(header, bg=COLORS["panel"])
+        title_block.configure(bg=COLORS["bg"])
         title_block.pack(side="left")
-        eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
+        eyebrow = tk.Frame(title_block, bg=COLORS["bg"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.17.0", 8, COLORS["muted"], "bold").pack(side="left")
-        self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
-        self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
+        self._label(eyebrow, "  LOCAL · v0.18.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(title_block, "市场航图", 23, weight="bold").pack(anchor="w", pady=(2, 0))
+        self._label(title_block, "先看结论，再展开研究", 9, COLORS["muted"]).pack(anchor="w", pady=(2, 0))
 
-        actions = tk.Frame(header, bg=COLORS["panel"])
-        actions.pack(side="right", anchor="center")
-        selectors = tk.Frame(actions, bg=COLORS["panel"])
-        selectors.pack(anchor="e", pady=(0, 8))
+        self.source_var = tk.StringVar(value="自动")
+        self.theme_var = tk.StringVar(value=self.theme_name)
+        self._build_more_menu(header).pack(side="right", anchor="s")
+
+        toolbar = self._panel(outer)
+        toolbar.configure(padx=16, pady=12)
+        toolbar.pack(fill="x", pady=(0, 10))
+        selectors = tk.Frame(toolbar, bg=COLORS["panel"])
+        selectors.pack(side="left", fill="x", expand=True)
         self.symbol_choices = self._build_symbol_choices()
         names = list(self.symbol_choices)
         self.symbol_var = tk.StringVar(value=names[0])
-        self.symbol_box = self._selector_control(selectors, "标的", self.symbol_var, names, 23, self._on_symbol_change)
+        self.symbol_box = self._selector_control(selectors, "当前标的", self.symbol_var, names, 28, self._on_symbol_change)
         self.period_var = tk.StringVar(value="1年")
-        self._selector_control(selectors, "图表周期", self.period_var, list(PERIODS), 7, lambda _event: self.refresh())
-        self.source_var = tk.StringVar(value="自动")
-        self._selector_control(selectors, "数据源", self.source_var, list(DATA_SOURCES), 9)
-        self.theme_var = tk.StringVar(value=self.theme_name)
-        self._selector_control(selectors, "主题", self.theme_var, list(THEMES), 10, self._on_theme_change, last=True)
-        buttons = tk.Frame(actions, bg=COLORS["panel"])
-        buttons.pack(anchor="e")
-        import_button = tk.Button(buttons, text="＋  导入 CSV", command=self.import_local_csv, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        import_button.pack(side="left", padx=(0, 8))
-        online_add_button = tk.Button(buttons, text="⌕  联网添加", command=self.add_online_instrument, bg=COLORS["rank_button"], fg=COLORS["gold"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        online_add_button.pack(side="left", padx=(0, 8))
-        api_key_button = tk.Button(buttons, text="⚿  API Key", command=self.configure_api_key, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        api_key_button.pack(side="left", padx=(0, 8))
-        ai_button = tk.Button(buttons, text="✦  AI 策略", command=self.open_ai_strategy, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        ai_button.pack(side="left", padx=(0, 8))
-        chat_button = tk.Button(buttons, text="◌  自由分析", command=self.open_free_analysis, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        chat_button.pack(side="left", padx=(0, 8))
-        self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        self._selector_control(selectors, "查看范围", self.period_var, list(PERIODS), 8, lambda _event: self.refresh(), last=True)
+        buttons = tk.Frame(toolbar, bg=COLORS["panel"])
+        buttons.pack(side="right", padx=(14, 0), anchor="s")
+        self.update_button = self._action_button(buttons, "更新数据", self.update_online, "button", "mint")
         self.update_button.pack(side="left", padx=(0, 8))
-        rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
-        rank_button.pack(side="left", padx=(0, 8))
-        self.refresh_button = tk.Button(buttons, text="刷新本地", command=self.refresh, bg=COLORS["mint"], fg=COLORS["bg"], activebackground=COLORS["cyan"], activeforeground=COLORS["bg"], relief="flat", padx=18, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        self._action_button(buttons, "自由分析", self.open_free_analysis, "rank_button", "cyan").pack(side="left", padx=(0, 8))
+        self.refresh_button = self._action_button(buttons, "刷新", self.refresh, "mint", "bg")
         self.refresh_button.pack(side="left")
 
         self.status_var = tk.StringVar(value="正在读取本地行情…")
-        self._label(outer, "", 9, COLORS["cyan"], textvariable=self.status_var).pack(fill="x", pady=(0, 9))
+        self._label(outer, "", 8, COLORS["cyan"], textvariable=self.status_var).pack(fill="x", pady=(0, 8))
+
+        summary = self._panel(outer)
+        summary.configure(padx=18, pady=14)
+        summary.pack(fill="x", pady=(0, 10))
+        summary_title = tk.Frame(summary, bg=COLORS["panel"])
+        summary_title.pack(fill="x", pady=(0, 10))
+        self._label(summary_title, "当前辅助信号", 12, weight="bold").pack(side="left")
+        self._label(summary_title, "仅供决策参考，不构成投资建议", 8, COLORS["muted"]).pack(side="right")
+        summary_body = tk.Frame(summary, bg=COLORS["panel"])
+        summary_body.pack(fill="x")
+        summary_body.grid_columnconfigure(0, weight=1, uniform="signal")
+        summary_body.grid_columnconfigure(1, weight=1, uniform="signal")
+        self.buy_widgets = self._signal_summary(summary_body, 0, "加仓", COLORS["mint"])
+        self.sell_widgets = self._signal_summary(summary_body, 1, "减仓", COLORS["coral"])
 
         cards = tk.Frame(outer, bg=COLORS["bg"])
-        cards.pack(fill="x", pady=(0, 12))
+        cards.pack(fill="x", pady=(0, 10))
         for index in range(4):
             cards.grid_columnconfigure(index, weight=1, uniform="metric")
         self.price_card = self._metric_card(cards, 0, "最新收盘", "price", "cyan")
@@ -349,13 +362,10 @@ class MarketDesktopApp:
         self.rsi_card = self._metric_card(cards, 2, "RSI14", "rsi", "gold")
         self.drawdown_card = self._metric_card(cards, 3, "250日高点回撤", "drawdown", "coral")
 
-        center = tk.Frame(outer, bg=COLORS["bg"])
-        center.pack(fill="both", expand=True)
-        center.grid_columnconfigure(0, weight=7)
-        center.grid_columnconfigure(1, weight=3)
-        center.grid_rowconfigure(0, weight=1)
-        chart_panel = self._panel(center)
-        chart_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        notebook = ttk.Notebook(outer, style="Main.TNotebook")
+        notebook.pack(fill="both", expand=True)
+        chart_panel = self._panel(notebook)
+        notebook.add(chart_panel, text="趋势图")
         chart_head = tk.Frame(chart_panel, bg=COLORS["panel"])
         chart_head.pack(fill="x")
         self._label(chart_head, "收盘价与长期均线", 13, weight="bold").pack(side="left")
@@ -368,27 +378,57 @@ class MarketDesktopApp:
         self.chart = LineChart(chart_panel)
         self.chart.pack(fill="both", expand=True, pady=(8, 0))
 
-        signals = tk.Frame(center, bg=COLORS["bg"])
-        signals.grid(row=0, column=1, sticky="nsew")
-        signals.grid_rowconfigure(0, weight=1, uniform="signal")
-        signals.grid_rowconfigure(1, weight=1, uniform="signal")
-        signals.grid_columnconfigure(0, weight=1)
-        self.buy_widgets = self._signal_card(signals, 0, "加仓辅助", COLORS["mint"])
-        self.sell_widgets = self._signal_card(signals, 1, "减仓辅助", COLORS["coral"])
-
-        returns_panel = self._panel(outer)
-        returns_panel.pack(fill="x", pady=(12, 0))
+        returns_panel = self._panel(notebook)
+        notebook.add(returns_panel, text="历史收益")
         returns_head = tk.Frame(returns_panel, bg=COLORS["panel"])
         returns_head.pack(fill="x", pady=(0, 8))
         self._label(returns_head, "历史持有收益", 12, weight="bold").pack(side="left")
         self._label(returns_head, "自然日口径 · 收益基于最接近的后续交易日", 8, COLORS["muted"]).pack(side="right")
         columns = ("period", "samples", "mean", "median", "positive", "min", "max")
-        self.returns_table = ttk.Treeview(returns_panel, columns=columns, show="headings", height=5)
+        self.returns_table = ttk.Treeview(returns_panel, columns=columns, show="headings", height=8)
         headings = ("持有期", "样本数", "平均收益", "中位数", "正收益率", "最差", "最好")
         for column, heading in zip(columns, headings):
             self.returns_table.heading(column, text=heading)
             self.returns_table.column(column, anchor="center", width=105, stretch=True)
-        self.returns_table.pack(fill="x")
+        self.returns_table.pack(fill="both", expand=True)
+
+    def _action_button(self, parent: tk.Misc, text: str, command: Any, background: str, foreground: str) -> tk.Button:
+        return tk.Button(
+            parent, text=text, command=command, bg=COLORS[background], fg=COLORS[foreground],
+            activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat",
+            padx=16, pady=8, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"),
+        )
+
+    def _build_more_menu(self, parent: tk.Misc) -> tk.Menubutton:
+        button = tk.Menubutton(
+            parent, text="更多工具  ▾", bg=COLORS["button"], fg=COLORS["text"],
+            activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat",
+            padx=16, pady=9, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"),
+        )
+        menu_options = {
+            "tearoff": False, "bg": COLORS["panel"], "fg": COLORS["text"],
+            "activebackground": COLORS["selected"], "activeforeground": COLORS["text"],
+            "font": ("Microsoft YaHei UI", 10), "borderwidth": 1,
+        }
+        menu = tk.Menu(button, **menu_options)
+        menu.add_command(label="指数横向排名", command=self.open_comparison)
+        menu.add_command(label="AI 策略优化", command=self.open_ai_strategy)
+        menu.add_separator()
+        menu.add_command(label="联网添加标的", command=self.add_online_instrument)
+        menu.add_command(label="导入本地 CSV", command=self.import_local_csv)
+        menu.add_separator()
+        source_menu = tk.Menu(menu, **menu_options)
+        for label in DATA_SOURCES:
+            source_menu.add_radiobutton(label=label, variable=self.source_var, value=label)
+        menu.add_cascade(label="在线数据源", menu=source_menu)
+        theme_menu = tk.Menu(menu, **menu_options)
+        for name in THEMES:
+            theme_menu.add_radiobutton(label=name, variable=self.theme_var, value=name, command=lambda: self._on_theme_change(None))
+        menu.add_cascade(label="界面主题", menu=theme_menu)
+        menu.add_command(label="配置 API Key", command=self.configure_api_key)
+        button.configure(menu=menu)
+        self._themed_menus = (menu, source_menu, theme_menu)
+        return button
 
     def _metric_card(self, parent: tk.Misc, column: int, title: str, name: str, accent_key: str) -> dict[str, tk.Label]:
         panel = self._panel(parent)
@@ -404,19 +444,22 @@ class MarketDesktopApp:
         detail.pack(anchor="w")
         return {"value": value, "detail": detail, "name": name}
 
-    def _signal_card(self, parent: tk.Misc, row: int, title: str, accent: str) -> dict[str, tk.Label]:
-        panel = self._panel(parent)
-        panel.grid(row=row, column=0, sticky="nsew", pady=(0, 6) if row == 0 else (6, 0))
-        stripe = tk.Frame(panel, bg=accent, width=3)
-        stripe.pack(side="left", fill="y", padx=(0, 13))
-        content = tk.Frame(panel, bg=COLORS["panel"])
-        content.pack(side="left", fill="both", expand=True)
-        top = tk.Frame(content, bg=COLORS["panel"]); top.pack(fill="x")
-        self._label(top, title, 11, weight="bold").pack(side="left")
-        level = self._label(top, "—", 8, accent, "bold"); level.pack(side="right")
-        score = self._label(content, "—", 24, accent, "bold"); score.pack(anchor="w", pady=(10, 0))
-        action = self._label(content, "—", 8, COLORS["muted"], wraplength=280, justify="left"); action.pack(anchor="w")
-        reasons = self._label(content, "—", 8, COLORS["soft_text"], wraplength=280, justify="left"); reasons.pack(anchor="w", pady=(10, 0))
+    def _signal_summary(self, parent: tk.Misc, column: int, title: str, accent: str) -> dict[str, tk.Label]:
+        content = tk.Frame(parent, bg=COLORS["panel_alt"], padx=16, pady=12)
+        content.grid(row=0, column=column, sticky="nsew", padx=(0, 6) if column == 0 else (6, 0))
+        top = tk.Frame(content, bg=COLORS["panel_alt"])
+        top.pack(fill="x")
+        self._label(top, title, 10, COLORS["soft_text"], "bold").pack(side="left")
+        level = self._label(top, "—", 8, accent, "bold")
+        level.pack(side="right")
+        value_row = tk.Frame(content, bg=COLORS["panel_alt"])
+        value_row.pack(fill="x", pady=(7, 2))
+        score = self._label(value_row, "—", 21, accent, "bold")
+        score.pack(side="left")
+        action = self._label(value_row, "—", 9, COLORS["text"], wraplength=370, justify="left")
+        action.pack(side="left", padx=(14, 0), fill="x", expand=True)
+        reasons = self._label(content, "—", 8, COLORS["muted"], wraplength=500, justify="left")
+        reasons.pack(anchor="w", fill="x")
         return {"level": level, "score": score, "action": action, "reasons": reasons}
 
     def _selector_control(
@@ -470,6 +513,11 @@ class MarketDesktopApp:
         self.root.configure(bg=COLORS["bg"])
         self._configure_styles()
         self._recolor_widget(self.root, color_map)
+        for menu in getattr(self, "_themed_menus", ()):
+            menu.configure(
+                bg=COLORS["panel"], fg=COLORS["text"],
+                activebackground=COLORS["selected"], activeforeground=COLORS["text"],
+            )
         for widget in self._walk_widgets(self.root):
             if isinstance(widget, LineChart):
                 widget.redraw()

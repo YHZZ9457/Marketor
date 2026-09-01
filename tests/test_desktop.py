@@ -1,6 +1,7 @@
 from csi300_service.desktop import (
     PERIODS,
     THEMES,
+    TOOL_MENU_GROUPS,
     LineChart,
     calculate_window_size,
     combobox_popup_options,
@@ -55,3 +56,11 @@ def test_combobox_popup_uses_theme_and_readable_font():
     assert options["-selectbackground"] == palette["selected"]
     assert "11" in str(options["-font"])
     assert options["-activestyle"] == "none"
+
+
+def test_secondary_features_are_grouped_in_more_tools_menu():
+    assert TOOL_MENU_GROUPS == {
+        "研究": ("指数排名", "AI 策略优化"),
+        "添加标的": ("联网添加", "导入本地 CSV"),
+        "设置": ("数据源", "主题", "API Key"),
+    }
