@@ -10,6 +10,7 @@ from csi300_service.ai_strategy import (
     InstrumentStrategyOptimizer, OpenAICompatibleJSONClient, load_strategy_profile,
     set_strategy_profile_active,
 )
+from csi300_service.ai_chat import analysis_system_prompt, build_analysis_context
 from csi300_service.catalog import InstrumentCatalog
 from csi300_service.service import MarketService
 
@@ -48,6 +49,22 @@ def test_openai_compatible_client_requests_json_without_logging_key():
     assert result == {"candidates": []}
 
 
+def test_openai_compatible_chat_bounds_history_and_returns_text():
+    api_response = {"choices": [{"message": {"content": "  风险主要来自波动与回撤。  "}}]}
+
+    def opener(request, timeout):
+        assert timeout == 75
+        body = json.loads(request.data)
+        assert body["messages"][0] == {"role": "system", "content": "system"}
+        assert len(body["messages"]) == 13  # system + latest 12 turns
+        assert body["messages"][1]["content"] == "q3"
+        return io.BytesIO(json.dumps(api_response, ensure_ascii=False).encode())
+
+    messages = [{"role": "user", "content": f"q{index}"} for index in range(15)]
+    answer = OpenAICompatibleJSONClient(api_key="secret", opener=opener).chat("system", messages)
+    assert answer == "风险主要来自波动与回撤。"
+
+
 def test_optimizer_saves_active_profile_and_service_uses_it(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "profile"))
     catalog = _catalog(tmp_path)
@@ -66,6 +83,19 @@ def test_optimizer_saves_active_profile_and_service_uses_it(tmp_path, monkeypatc
     set_strategy_profile_active("demo", False)
     default_signal = MarketService("demo", catalog=catalog).signal()
     assert "strategy_profile" not in default_signal
+
+
+def test_free_analysis_context_is_compact_and_marks_data_cutoff(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "profile"))
+    catalog = _catalog(tmp_path)
+    context = build_analysis_context("demo", catalog=catalog)
+    assert context["instrument"]["symbol"] == "demo"
+    assert context["context_policy"]["raw_history_transmitted"] is False
+    assert context["context_policy"]["data_cutoff"] == context["latest"]["date"]
+    assert "history" not in context
+    prompt = analysis_system_prompt(context)
+    assert "不得生成或执行自动交易指令" in prompt
+    assert "Demo Stock" in prompt
 
 
 def test_ai_candidate_is_locally_clamped_and_validated():

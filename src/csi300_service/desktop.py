@@ -23,6 +23,7 @@ from .ai_strategy import (
     DEEPSEEK_API_KEY_ENV, InstrumentStrategyOptimizer, OpenAICompatibleJSONClient,
     load_strategy_profile, set_strategy_profile_active,
 )
+from .ai_chat import analysis_system_prompt, build_analysis_context
 
 
 THEMES = {
@@ -299,7 +300,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["panel"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.16.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.17.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 26, weight="bold").pack(anchor="w", pady=(3, 0))
         self._label(title_block, "多指数长期位置 · 动量 · 独立事件研究", 9, COLORS["muted"]).pack(anchor="w", pady=(3, 0))
 
@@ -327,6 +328,8 @@ class MarketDesktopApp:
         api_key_button.pack(side="left", padx=(0, 8))
         ai_button = tk.Button(buttons, text="✦  AI 策略", command=self.open_ai_strategy, bg=COLORS["rank_button"], fg=COLORS["violet"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         ai_button.pack(side="left", padx=(0, 8))
+        chat_button = tk.Button(buttons, text="◌  自由分析", command=self.open_free_analysis, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=14, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
+        chat_button.pack(side="left", padx=(0, 8))
         self.update_button = tk.Button(buttons, text="↻  在线更新", command=self.update_online, bg=COLORS["button"], fg=COLORS["mint"], activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
         self.update_button.pack(side="left", padx=(0, 8))
         rank_button = tk.Button(buttons, text="◇  指数排名", command=self.open_comparison, bg=COLORS["rank_button"], fg=COLORS["cyan"], activebackground=COLORS["rank_hover"], activeforeground=COLORS["text"], relief="flat", padx=16, pady=7, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"))
@@ -774,6 +777,201 @@ class MarketDesktopApp:
         optimize_button.pack(side="left")
         panel.grid_columnconfigure(1, weight=1)
         key_entry.focus_set()
+
+    def open_free_analysis(self) -> None:
+        instrument = self.catalog.get(self.current_symbol)
+        try:
+            context = build_analysis_context(instrument.symbol, catalog=self.catalog)
+        except Exception as exc:
+            messagebox.showerror("无法建立分析上下文", str(exc), parent=self.root)
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title(f"自由分析 · {instrument.name} · Marketor")
+        screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
+        width, height = min(940, int(screen_w * 0.88)), min(720, int(screen_h * 0.86))
+        window.geometry(f"{width}x{height}")
+        window.minsize(720, 560)
+        window.transient(self.root)
+        window.configure(bg=COLORS["bg"])
+
+        outer = tk.Frame(window, bg=COLORS["bg"], padx=18, pady=16)
+        outer.pack(fill="both", expand=True)
+        header = self._panel(outer)
+        header.pack(fill="x", pady=(0, 10))
+        title_row = tk.Frame(header, bg=COLORS["panel"])
+        title_row.pack(fill="x")
+        self._label(title_row, f"{instrument.name} · 自由分析", 16, weight="bold").pack(side="left")
+        cutoff = context["context_policy"]["data_cutoff"]
+        self._label(title_row, f"数据截止 {cutoff}", 8, COLORS["gold"], "bold").pack(side="right")
+        self._label(header, "连续提问 · 自动带入指标、历史收益与信号摘要 · 不会修改策略或执行交易", 8, COLORS["muted"]).pack(anchor="w", pady=(4, 10))
+
+        config = tk.Frame(header, bg=COLORS["panel"])
+        config.pack(fill="x")
+        provider_var = tk.StringVar(value="DeepSeek")
+        key_var = tk.StringVar()
+        base_url_var = tk.StringVar(value="https://api.deepseek.com")
+        model_var = tk.StringVar(value="deepseek-v4-flash")
+
+        def config_field(label: str, variable: tk.StringVar, width_chars: int, *, secret: bool = False) -> tk.Entry:
+            group = tk.Frame(config, bg=COLORS["panel"])
+            group.pack(side="left", fill="x", expand=label in {"API Key", "Base URL"}, padx=(0, 9))
+            self._label(group, label, 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
+            entry = tk.Entry(group, textvariable=variable, show="●" if secret else "", width=width_chars, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", font=("Segoe UI", 9))
+            entry.pack(fill="x", ipady=6)
+            return entry
+
+        provider_group = tk.Frame(config, bg=COLORS["panel"])
+        provider_group.pack(side="left", padx=(0, 9))
+        self._label(provider_group, "AI 服务", 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
+        provider_box = ttk.Combobox(provider_group, textvariable=provider_var, values=["DeepSeek", "OpenAI 兼容接口"], state="readonly", width=16, style="Toolbar.TCombobox")
+        provider_box.pack(ipady=2)
+        key_entry = config_field("API Key", key_var, 18, secret=True)
+        config_field("Base URL", base_url_var, 24)
+        config_field("模型", model_var, 18)
+
+        def provider_changed(_event: Any = None) -> None:
+            if provider_var.get() == "DeepSeek":
+                base_url_var.set("https://api.deepseek.com")
+                model_var.set("deepseek-v4-flash")
+            else:
+                base_url_var.set("https://api.openai.com/v1")
+                model_var.set("")
+
+        provider_box.bind("<<ComboboxSelected>>", provider_changed)
+
+        transcript_panel = tk.Frame(outer, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1)
+        transcript_panel.pack(fill="both", expand=True, pady=(0, 10))
+        scrollbar = ttk.Scrollbar(transcript_panel, orient="vertical", style="Dropdown.Vertical.TScrollbar")
+        transcript = tk.Text(
+            transcript_panel, wrap="word", state="disabled", undo=False,
+            bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"],
+            selectbackground=COLORS["selected"], relief="flat", padx=16, pady=14,
+            font=("Microsoft YaHei UI", 10), spacing1=3, spacing3=7,
+            yscrollcommand=scrollbar.set,
+        )
+        scrollbar.configure(command=transcript.yview)
+        scrollbar.pack(side="right", fill="y")
+        transcript.pack(side="left", fill="both", expand=True)
+        transcript.tag_configure("user_head", foreground=COLORS["mint"], font=("Microsoft YaHei UI", 9, "bold"))
+        transcript.tag_configure("assistant_head", foreground=COLORS["cyan"], font=("Microsoft YaHei UI", 9, "bold"))
+        transcript.tag_configure("system", foreground=COLORS["muted"], font=("Microsoft YaHei UI", 9))
+
+        history: list[dict[str, str]] = []
+        request_pending = False
+
+        def append_message(role: str, content: str) -> None:
+            if not window.winfo_exists():
+                return
+            labels = {"user": ("你", "user_head"), "assistant": ("Marketor AI", "assistant_head"), "system": ("系统", "system")}
+            label, tag = labels[role]
+            transcript.configure(state="normal")
+            transcript.insert("end", f"{label}\n", tag)
+            if role == "system":
+                transcript.insert("end", f"{content.strip()}\n\n", "system")
+            else:
+                transcript.insert("end", f"{content.strip()}\n\n")
+            transcript.configure(state="disabled")
+            transcript.see("end")
+
+        append_message("system", f"已载入 {instrument.name} 的本地分析摘要，行情截止 {cutoff}。你可以询问当前指标、风险、历史收益、策略依据或不同市场情景。")
+
+        input_panel = self._panel(outer)
+        input_panel.pack(fill="x")
+        input_box = tk.Text(
+            input_panel, height=4, wrap="word", bg=COLORS["panel_alt"], fg=COLORS["text"],
+            insertbackground=COLORS["text"], selectbackground=COLORS["selected"], relief="flat",
+            padx=10, pady=8, font=("Microsoft YaHei UI", 10),
+        )
+        input_box.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        controls = tk.Frame(input_panel, bg=COLORS["panel"])
+        controls.pack(side="right", fill="y")
+        status_var = tk.StringVar(value="Ctrl+Enter 发送")
+        self._label(controls, "", 8, COLORS["muted"], textvariable=status_var, wraplength=150, justify="center").pack(pady=(0, 7))
+
+        def reset_chat() -> None:
+            if request_pending:
+                return
+            history.clear()
+            transcript.configure(state="normal")
+            transcript.delete("1.0", "end")
+            transcript.configure(state="disabled")
+            append_message("system", f"新会话已建立，仍使用 {instrument.name} 截至 {cutoff} 的本地摘要。")
+
+        def send() -> None:
+            nonlocal request_pending
+            if request_pending:
+                return
+            question = input_box.get("1.0", "end").strip()
+            if not question:
+                return
+            if len(question) > 4000:
+                messagebox.showwarning("问题过长", "单次问题请控制在 4000 字以内。", parent=window)
+                return
+            env_name = DEEPSEEK_API_KEY_ENV if provider_var.get() == "DeepSeek" else "MARKETOR_AI_API_KEY"
+            key = key_var.get().strip() or os.getenv(env_name, "").strip()
+            if not key:
+                messagebox.showwarning("需要 API Key", "请在上方粘贴当前 AI 服务的 API Key。", parent=window)
+                key_entry.focus_set()
+                return
+            if not base_url_var.get().strip() or not model_var.get().strip():
+                messagebox.showwarning("配置不完整", "Base URL 和模型名称不能为空。", parent=window)
+                return
+            save_user_api_key(env_name, key)
+            key_var.set("")
+            input_box.delete("1.0", "end")
+            append_message("user", question)
+            history.append({"role": "user", "content": question})
+            request_pending = True
+            send_button.configure(state="disabled")
+            clear_button.configure(state="disabled")
+            status_var.set("正在分析…")
+            client = OpenAICompatibleJSONClient(api_key=key, base_url=base_url_var.get(), model=model_var.get())
+            messages = history[-12:].copy()
+            system_prompt = analysis_system_prompt(context)
+
+            def worker() -> None:
+                try:
+                    answer = client.chat(system_prompt, messages)
+                    self.root.after(0, finish, answer)
+                except Exception as exc:
+                    self.root.after(0, failed, str(exc))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def finish(answer: str) -> None:
+            nonlocal request_pending
+            if not window.winfo_exists():
+                return
+            request_pending = False
+            history.append({"role": "assistant", "content": answer})
+            append_message("assistant", answer)
+            send_button.configure(state="normal")
+            clear_button.configure(state="normal")
+            status_var.set("Ctrl+Enter 发送")
+            input_box.focus_set()
+
+        def failed(message: str) -> None:
+            nonlocal request_pending
+            if not window.winfo_exists():
+                return
+            request_pending = False
+            append_message("system", f"本次分析失败：{message}")
+            send_button.configure(state="normal")
+            clear_button.configure(state="normal")
+            status_var.set("调用失败，可检查配置后重试")
+
+        def send_shortcut(_event: Any) -> str:
+            send()
+            return "break"
+
+        input_box.bind("<Control-Return>", send_shortcut)
+        send_button = tk.Button(controls, text="发送", command=send, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=8, font=("Microsoft YaHei UI", 9, "bold"))
+        send_button.pack(fill="x")
+        clear_button = tk.Button(controls, text="清空会话", command=reset_chat, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=14, pady=7)
+        clear_button.pack(fill="x", pady=(7, 0))
+        tk.Button(controls, text="关闭", command=window.destroy, bg=COLORS["button"], fg=COLORS["muted"], relief="flat", padx=14, pady=7).pack(fill="x", pady=(7, 0))
+        input_box.focus_set()
 
     def add_online_instrument(self) -> None:
         window = tk.Toplevel(self.root)

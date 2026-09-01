@@ -115,6 +115,37 @@ class OpenAICompatibleJSONClient:
         except Exception as exc:
             raise RuntimeError(f"AI 策略接口调用失败：{exc}") from exc
 
+    def chat(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
+        """Return one non-streaming conversational answer."""
+        if not self.api_key:
+            raise RuntimeError("AI API Key 不能为空")
+        cleaned = [
+            {"role": item["role"], "content": str(item["content"])[:8000]}
+            for item in messages[-12:]
+            if item.get("role") in {"user", "assistant"} and item.get("content")
+        ]
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}, *cleaned],
+            "temperature": 0.3,
+            "max_tokens": 2200,
+        }
+        request = Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            response = self.opener(request, timeout=75)
+            envelope = json.loads(response.read().decode("utf-8"))
+            content = envelope["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("模型返回空内容")
+            return content.strip()
+        except Exception as exc:
+            raise RuntimeError(f"AI 自由分析接口调用失败：{exc}") from exc
+
 
 class InstrumentStrategyOptimizer:
     """AI-proposed, locally validated per-instrument threshold optimizer."""
