@@ -46,3 +46,14 @@ def analysis_system_prompt(context: dict[str, Any]) -> str:
         "回答尽量清晰简洁，引用关键数字时注明日期或统计口径。\n\n"
         f"当前标的上下文 JSON：\n{json.dumps(context, ensure_ascii=False, separators=(',', ':'))}"
     )
+
+
+def free_chat_system_prompt() -> str:
+    """Prompt for ordinary conversation without silently attaching market data."""
+    return (
+        "你是 Marketor 内置的通用 AI 助手。默认用中文自然、清晰地回答用户问题，"
+        "也可以按用户要求切换语言。当前对话没有附带任何行情、账户或本地 CSV 数据；"
+        "若用户询问实时或当前市场情况，要明确说明你没有自动获得最新行情，不能编造数据。"
+        "你可以讨论一般知识、写作、学习、编程和市场研究等话题。涉及金融决策时区分事实、"
+        "推断与不确定性，不承诺收益，不声称执行了下单或修改策略，并提醒回答不构成个性化投资建议。"
+    )

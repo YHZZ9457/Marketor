@@ -10,7 +10,7 @@ from csi300_service.ai_strategy import (
     InstrumentStrategyOptimizer, OpenAICompatibleJSONClient, load_strategy_profile,
     set_strategy_profile_active,
 )
-from csi300_service.ai_chat import analysis_system_prompt, build_analysis_context
+from csi300_service.ai_chat import analysis_system_prompt, build_analysis_context, free_chat_system_prompt
 from csi300_service.catalog import InstrumentCatalog
 from csi300_service.service import MarketService
 
@@ -96,6 +96,13 @@ def test_free_analysis_context_is_compact_and_marks_data_cutoff(tmp_path, monkey
     prompt = analysis_system_prompt(context)
     assert "不得生成或执行自动交易指令" in prompt
     assert "Demo Stock" in prompt
+
+
+def test_free_chat_prompt_does_not_claim_market_context():
+    prompt = free_chat_system_prompt()
+    assert "通用 AI 助手" in prompt
+    assert "没有附带任何行情" in prompt
+    assert "本地 CSV 数据" in prompt
 
 
 def test_ai_candidate_is_locally_clamped_and_validated():

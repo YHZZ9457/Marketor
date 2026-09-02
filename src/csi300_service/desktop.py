@@ -23,7 +23,7 @@ from .ai_strategy import (
     DEEPSEEK_API_KEY_ENV, InstrumentStrategyOptimizer, OpenAICompatibleJSONClient,
     load_strategy_profile, set_strategy_profile_active,
 )
-from .ai_chat import analysis_system_prompt, build_analysis_context
+from .ai_chat import analysis_system_prompt, build_analysis_context, free_chat_system_prompt
 
 
 THEMES = {
@@ -309,7 +309,7 @@ class MarketDesktopApp:
         eyebrow = tk.Frame(title_block, bg=COLORS["bg"])
         eyebrow.pack(anchor="w")
         self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.18.0", 8, COLORS["muted"], "bold").pack(side="left")
+        self._label(eyebrow, "  LOCAL · v0.19.0", 8, COLORS["muted"], "bold").pack(side="left")
         self._label(title_block, "市场航图", 23, weight="bold").pack(anchor="w", pady=(2, 0))
         self._label(title_block, "先看结论，再展开研究", 9, COLORS["muted"]).pack(anchor="w", pady=(2, 0))
 
@@ -332,7 +332,7 @@ class MarketDesktopApp:
         buttons.pack(side="right", padx=(14, 0), anchor="s")
         self.update_button = self._action_button(buttons, "更新数据", self.update_online, "button", "mint")
         self.update_button.pack(side="left", padx=(0, 8))
-        self._action_button(buttons, "自由分析", self.open_free_analysis, "rank_button", "cyan").pack(side="left", padx=(0, 8))
+        self._action_button(buttons, "AI 对话", self.open_ai_chat, "rank_button", "cyan").pack(side="left", padx=(0, 8))
         self.refresh_button = self._action_button(buttons, "刷新", self.refresh, "mint", "bg")
         self.refresh_button.pack(side="left")
 
@@ -826,16 +826,17 @@ class MarketDesktopApp:
         panel.grid_columnconfigure(1, weight=1)
         key_entry.focus_set()
 
-    def open_free_analysis(self) -> None:
+    def open_ai_chat(self) -> None:
         instrument = self.catalog.get(self.current_symbol)
+        context: dict[str, Any] | None = None
+        context_error = ""
         try:
             context = build_analysis_context(instrument.symbol, catalog=self.catalog)
         except Exception as exc:
-            messagebox.showerror("无法建立分析上下文", str(exc), parent=self.root)
-            return
+            context_error = str(exc)
 
         window = tk.Toplevel(self.root)
-        window.title(f"自由分析 · {instrument.name} · Marketor")
+        window.title("AI 自由聊天 · Marketor")
         screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
         width, height = min(940, int(screen_w * 0.88)), min(720, int(screen_h * 0.86))
         window.geometry(f"{width}x{height}")
@@ -849,10 +850,10 @@ class MarketDesktopApp:
         header.pack(fill="x", pady=(0, 10))
         title_row = tk.Frame(header, bg=COLORS["panel"])
         title_row.pack(fill="x")
-        self._label(title_row, f"{instrument.name} · 自由分析", 16, weight="bold").pack(side="left")
-        cutoff = context["context_policy"]["data_cutoff"]
-        self._label(title_row, f"数据截止 {cutoff}", 8, COLORS["gold"], "bold").pack(side="right")
-        self._label(header, "连续提问 · 自动带入指标、历史收益与信号摘要 · 不会修改策略或执行交易", 8, COLORS["muted"]).pack(anchor="w", pady=(4, 10))
+        self._label(title_row, "AI 自由聊天", 16, weight="bold").pack(side="left")
+        cutoff = context["context_policy"]["data_cutoff"] if context is not None else "不可用"
+        self._label(title_row, "自由对话 · 可选行情上下文", 8, COLORS["cyan"], "bold").pack(side="right")
+        self._label(header, "普通聊天不会读取行情；需要分析时可手动带入当前标的摘要", 8, COLORS["muted"]).pack(anchor="w", pady=(4, 10))
 
         config = tk.Frame(header, bg=COLORS["panel"])
         config.pack(fill="x")
@@ -888,6 +889,22 @@ class MarketDesktopApp:
 
         provider_box.bind("<<ComboboxSelected>>", provider_changed)
 
+        mode_bar = tk.Frame(header, bg=COLORS["panel"])
+        mode_bar.pack(fill="x", pady=(11, 0))
+        include_market_var = tk.BooleanVar(value=False)
+        market_toggle = tk.Checkbutton(
+            mode_bar, text=f"带入当前行情：{instrument.name}", variable=include_market_var,
+            bg=COLORS["panel"], fg=COLORS["text"], activebackground=COLORS["panel"],
+            activeforeground=COLORS["text"], selectcolor=COLORS["panel_alt"],
+            font=("Microsoft YaHei UI", 9), cursor="hand2",
+        )
+        market_toggle.pack(side="left")
+        mode_hint = self._label(mode_bar, "普通自由聊天模式", 8, COLORS["mint"], "bold")
+        mode_hint.pack(side="right")
+        if context is None:
+            market_toggle.configure(state="disabled")
+            mode_hint.configure(text=f"行情上下文不可用：{context_error}", fg=COLORS["coral"])
+
         transcript_panel = tk.Frame(outer, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1)
         transcript_panel.pack(fill="both", expand=True, pady=(0, 10))
         scrollbar = ttk.Scrollbar(transcript_panel, orient="vertical", style="Dropdown.Vertical.TScrollbar")
@@ -922,7 +939,12 @@ class MarketDesktopApp:
             transcript.configure(state="disabled")
             transcript.see("end")
 
-        append_message("system", f"已载入 {instrument.name} 的本地分析摘要，行情截止 {cutoff}。你可以询问当前指标、风险、历史收益、策略依据或不同市场情景。")
+        def chat_mode_message() -> str:
+            if include_market_var.get() and context is not None:
+                return f"行情分析模式：已带入 {instrument.name} 的本地摘要，数据截止 {cutoff}。"
+            return "普通自由聊天模式：不会读取或发送本地行情数据，你可以聊任何话题。"
+
+        append_message("system", chat_mode_message())
 
         input_panel = self._panel(outer)
         input_panel.pack(fill="x")
@@ -944,7 +966,13 @@ class MarketDesktopApp:
             transcript.configure(state="normal")
             transcript.delete("1.0", "end")
             transcript.configure(state="disabled")
-            append_message("system", f"新会话已建立，仍使用 {instrument.name} 截至 {cutoff} 的本地摘要。")
+            mode_hint.configure(
+                text=f"行情分析 · 截止 {cutoff}" if include_market_var.get() else "普通自由聊天模式",
+                fg=COLORS["gold"] if include_market_var.get() else COLORS["mint"],
+            )
+            append_message("system", chat_mode_message())
+
+        market_toggle.configure(command=reset_chat)
 
         def send() -> None:
             nonlocal request_pending
@@ -973,10 +1001,11 @@ class MarketDesktopApp:
             request_pending = True
             send_button.configure(state="disabled")
             clear_button.configure(state="disabled")
-            status_var.set("正在分析…")
+            status_var.set("AI 正在回复…")
             client = OpenAICompatibleJSONClient(api_key=key, base_url=base_url_var.get(), model=model_var.get())
             messages = history[-12:].copy()
-            system_prompt = analysis_system_prompt(context)
+            system_prompt = analysis_system_prompt(context) if include_market_var.get() and context is not None else free_chat_system_prompt()
+            market_toggle.configure(state="disabled")
 
             def worker() -> None:
                 try:
@@ -996,6 +1025,7 @@ class MarketDesktopApp:
             append_message("assistant", answer)
             send_button.configure(state="normal")
             clear_button.configure(state="normal")
+            market_toggle.configure(state="normal" if context is not None else "disabled")
             status_var.set("Ctrl+Enter 发送")
             input_box.focus_set()
 
@@ -1004,9 +1034,10 @@ class MarketDesktopApp:
             if not window.winfo_exists():
                 return
             request_pending = False
-            append_message("system", f"本次分析失败：{message}")
+            append_message("system", f"本次对话失败：{message}")
             send_button.configure(state="normal")
             clear_button.configure(state="normal")
+            market_toggle.configure(state="normal" if context is not None else "disabled")
             status_var.set("调用失败，可检查配置后重试")
 
         def send_shortcut(_event: Any) -> str:
