@@ -27,6 +27,9 @@ class Instrument:
     amount_unit: str = "CNY_THOUSAND"
     online_source: str | None = None
     adjustment: str | None = None
+    strategies: tuple[str, ...] = ("ma_dynamic_v1",)
+    total_return_code: str | None = None
+    total_return_file: str | None = None
 
     @property
     def has_data(self) -> bool:
@@ -60,6 +63,14 @@ def custom_catalog_path() -> Path:
     return user_storage_dir() / "custom" / "instruments.json"
 
 
+def _catalog_path(base_dir: Path, value: str, field: str) -> Path:
+    """Join a catalog filename without dereferencing legitimate Windows links."""
+    relative = Path(str(value))
+    if relative.is_absolute() or relative.drive or ".." in relative.parts:
+        raise ValueError(f"Instrument {field} must stay inside {base_dir}")
+    return base_dir / relative
+
+
 class InstrumentCatalog:
     """File-backed instrument registry.
 
@@ -86,13 +97,15 @@ class InstrumentCatalog:
     def _load_config(self, config_path: Path) -> None:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
         base_dir = config_path.parent.resolve()
+        default_strategies = tuple(payload.get("default_strategies", ["ma_dynamic_v1"]))
         for item in payload.get("instruments", []):
             symbol = str(item["symbol"]).strip().lower()
             if not symbol or symbol in self._items:
                 raise ValueError(f"Invalid or duplicate instrument symbol: {symbol!r}")
-            data_path = (base_dir / item["data_file"]).resolve()
-            if base_dir not in data_path.parents:
-                raise ValueError(f"Instrument data_file must stay inside {base_dir}")
+            data_path = _catalog_path(base_dir, item["data_file"], "data_file")
+            total_return_file = item.get("total_return_file")
+            if total_return_file:
+                _catalog_path(base_dir, total_return_file, "total_return_file")
             self._items[symbol] = Instrument(
                 symbol=symbol,
                 name=item["name"],
@@ -111,6 +124,9 @@ class InstrumentCatalog:
                 amount_unit=item.get("amount_unit", "CNY_THOUSAND"),
                 online_source=item.get("online_source"),
                 adjustment=item.get("adjustment"),
+                strategies=tuple(item.get("strategies", default_strategies)),
+                total_return_code=item.get("total_return_code"),
+                total_return_file=total_return_file,
             )
 
     def get(self, symbol: str = "csi300") -> Instrument:

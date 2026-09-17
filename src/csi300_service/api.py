@@ -13,7 +13,7 @@ from .events import EventBacktester
 from .service import MarketService
 from .statistics import statistics_methods
 
-app = FastAPI(title="Market Analysis Service", version="0.19.0")
+app = FastAPI(title="Market Analysis Service", version="0.20.0")
 catalog = InstrumentCatalog()
 web_dir = Path(__file__).resolve().parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
@@ -37,7 +37,7 @@ def api_index():
     return {
         "service": "Market Analysis Service",
         "default_symbol": "csi300",
-        "endpoints": ["/instruments", "/comparison", "/events", "/latest", "/indicators", "/history", "/signal", "/holding-returns", "/statistics/methods", "/docs"],
+        "endpoints": ["/instruments", "/comparison", "/events", "/latest", "/indicators", "/history", "/signal", "/strategies/ma-dynamic-v1", "/holding-returns", "/statistics/methods", "/docs"],
     }
 
 
@@ -97,5 +97,14 @@ def holding_returns(symbol: str = "csi300", method: str = "summary", days: str =
     try:
         periods = [int(value.strip()) for value in days.split(",") if value.strip()]
         return _service(symbol).holding_returns(periods, method)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/strategies/ma-dynamic-v1")
+def ma_dynamic(symbol: str = "csi300", start: str | None = None,
+               end: str | None = None, include_ledger: bool = False):
+    try:
+        return _service(symbol).ma_dynamic(start, end, include_ledger)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

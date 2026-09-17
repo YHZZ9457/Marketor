@@ -391,6 +391,7 @@ def test_overlap_conflict_rejects_update_without_touching_csv(tmp_path):
 
 def test_source_priority_falls_through_to_next_source(tmp_path, monkeypatch):
     """Primary source failing must not block the backup source."""
+    monkeypatch.setattr("csi300_service.updater.hithink_api_key", lambda: None)
     catalog, csv_path = temp_catalog(tmp_path, market_frame(10))
     failing = FakeSource(error=RuntimeError("primary down"))
     good = FakeSource(market_frame(12))

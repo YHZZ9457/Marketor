@@ -27,6 +27,13 @@ from .ai_chat import analysis_system_prompt, build_analysis_context, free_chat_s
 
 
 THEMES = {
+    "曜石青": {
+        "bg": "#101416", "panel": "#191f22", "panel_alt": "#141a1d", "line": "#303a3f",
+        "text": "#edf2f3", "muted": "#95a5ad", "soft_text": "#c3ced3", "mint": "#71d4bc",
+        "cyan": "#83bfe0", "gold": "#ddbd80", "coral": "#e99292", "violet": "#b3a3dc",
+        "selected": "#29423e",
+        "button": "#243530", "button_hover": "#304c43", "rank_button": "#26333d", "rank_hover": "#334754",
+    },
     "墨绿夜色": {
         "bg": "#07110f", "panel": "#10231f", "panel_alt": "#0c1c19", "line": "#29433c",
         "text": "#eff8f4", "muted": "#91aaa2", "soft_text": "#c4d3ce", "mint": "#72e6bc",
@@ -56,7 +63,7 @@ THEMES = {
         "button": "#dcece5", "button_hover": "#c6dfd4", "rank_button": "#dce8ed", "rank_hover": "#c6dce4",
     },
 }
-DEFAULT_THEME = "墨绿夜色"
+DEFAULT_THEME = "曜石青"
 COLORS = dict(THEMES[DEFAULT_THEME])
 
 PERIODS = {"半年": 120, "1年": 250, "2年": 500, "4年": 1000}
@@ -207,7 +214,7 @@ class LineChart(tk.Canvas):
 
     def redraw(self) -> None:
         self.delete("all")
-        width, height = max(self.winfo_width(), 400), max(self.winfo_height(), 240)
+        width, height = max(self.winfo_width(), 240), max(self.winfo_height(), 200)
         if not self.rows:
             self.create_text(width / 2, height / 2, text="暂无行情数据", fill=COLORS["muted"], font=("Microsoft YaHei UI", 11))
             return
@@ -275,6 +282,7 @@ class MarketDesktopApp:
         self.root.geometry(f"{width}x{height}+{left}+{top}")
         self.root.minsize(min(round(980 * self.ui_scale), width), min(round(700 * self.ui_scale), height))
         self.root.configure(bg=COLORS["bg"])
+        self.root.after_idle(self._style_titlebar)
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -296,30 +304,72 @@ class MarketDesktopApp:
         return tk.Frame(parent, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1, padx=20, pady=17)
 
     def _build_ui(self) -> None:
-        outer = tk.Frame(self.root, bg=COLORS["bg"], padx=22, pady=18)
-        outer.pack(fill="both", expand=True)
+        layout = tk.Frame(self.root, bg=COLORS["bg"])
+        layout.pack(fill="both", expand=True)
+        sidebar = tk.Frame(layout, bg=COLORS["panel"], width=round(210 * self.ui_scale))
+        sidebar.pack(side="left", fill="y")
+        sidebar.pack_propagate(False)
+        brand = tk.Frame(sidebar, bg=COLORS["panel"], padx=20, pady=24)
+        brand.pack(fill="x")
+        self._label(brand, "◈  市场航图", 16, weight="bold").pack(anchor="w")
+        self._label(brand, "MARKET COMPASS · v0.20", 8, COLORS["muted"]).pack(anchor="w", pady=(7, 0))
+        tk.Frame(sidebar, bg=COLORS["line"], height=1).pack(fill="x", padx=20)
 
-        accent_line = tk.Frame(outer, bg=COLORS["mint"], height=3)
-        accent_line.pack(fill="x", pady=(0, 12))
-        header = tk.Frame(outer, bg=COLORS["bg"])
-        header.pack(fill="x", pady=(0, 12))
-        title_block = tk.Frame(header, bg=COLORS["panel"])
-        title_block.configure(bg=COLORS["bg"])
-        title_block.pack(side="left")
-        eyebrow = tk.Frame(title_block, bg=COLORS["bg"])
-        eyebrow.pack(anchor="w")
-        self._label(eyebrow, "MARKET COMPASS", 8, COLORS["mint"], "bold").pack(side="left")
-        self._label(eyebrow, "  LOCAL · v0.19.0", 8, COLORS["muted"], "bold").pack(side="left")
-        self._label(title_block, "市场航图", 23, weight="bold").pack(anchor="w", pady=(2, 0))
-        self._label(title_block, "先看结论，再展开研究", 9, COLORS["muted"]).pack(anchor="w", pady=(2, 0))
+        nav = tk.Frame(sidebar, bg=COLORS["panel"], padx=12, pady=18)
+        nav.pack(fill="x")
+        self._label(nav, "  工作空间", 8, COLORS["muted"]).pack(anchor="w", pady=(0, 9))
+        self._button(nav, "◉   行情总览", lambda: self.content_canvas.yview_moveto(0), primary=True).pack(fill="x", pady=3)
+        self._button(nav, "◇   指数排名", self.open_comparison).pack(fill="x", pady=3)
+        self._button(nav, "≋   MA 动态策略", self.open_ma_dynamic).pack(fill="x", pady=3)
+        self._button(nav, "✦   AI 自由对话", self.open_ai_chat).pack(fill="x", pady=3)
+        self._button(nav, "⌁   AI 策略优化", self.open_ai_strategy).pack(fill="x", pady=3)
+        self._label(nav, "  标的管理", 8, COLORS["muted"]).pack(anchor="w", pady=(20, 9))
+        self._button(nav, "＋   联网添加", self.add_online_instrument).pack(fill="x", pady=3)
+        self._button(nav, "⇧   导入本地 CSV", self.import_local_csv).pack(fill="x", pady=3)
 
+        settings = tk.Frame(sidebar, bg=COLORS["panel"], padx=16)
+        settings.pack(side="bottom", fill="x", pady=16)
         self.source_var = tk.StringVar(value="自动")
         self.theme_var = tk.StringVar(value=self.theme_name)
-        self._build_more_menu(header).pack(side="right", anchor="s")
+        self._selector_control(settings, "行情来源", self.source_var, list(DATA_SOURCES), 13, stacked=True)
+        self._selector_control(settings, "界面主题", self.theme_var, list(THEMES), 13, self._on_theme_change, stacked=True)
+        self.update_button = self._button(settings, "↻  在线更新", self.update_online)
+        self.update_button.pack(fill="x", pady=(5, 3))
+        self._button(settings, "⚿  配置 API Key", self.configure_api_key).pack(fill="x", pady=3)
+        self._label(settings, "本地研究 · 不自动交易", 8, COLORS["muted"]).pack(anchor="w", pady=(13, 0))
+        tk.Frame(layout, bg=COLORS["line"], width=1).pack(side="left", fill="y")
+
+        workspace = tk.Frame(layout, bg=COLORS["bg"])
+        workspace.pack(side="left", fill="both", expand=True)
+        self.status_var = tk.StringVar(value="正在读取本地行情…")
+        self._label(workspace, "", 8, COLORS["muted"], textvariable=self.status_var,
+                    anchor="w", padx=22, pady=9).pack(side="bottom", fill="x")
+        viewport = tk.Frame(workspace, bg=COLORS["bg"])
+        viewport.pack(fill="both", expand=True)
+        self.content_canvas = tk.Canvas(viewport, bg=COLORS["bg"], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(viewport, orient="vertical", command=self.content_canvas.yview,
+                                  style="Dropdown.Vertical.TScrollbar")
+        scrollbar.pack(side="right", fill="y")
+        self.content_canvas.pack(side="left", fill="both", expand=True)
+        self.content_canvas.configure(yscrollcommand=scrollbar.set)
+        outer = tk.Frame(self.content_canvas, bg=COLORS["bg"], padx=22, pady=20)
+        content_id = self.content_canvas.create_window((0, 0), window=outer, anchor="nw")
+        outer.bind("<Configure>", lambda _e: self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all")))
+        self.content_canvas.bind("<Configure>", lambda event: self.content_canvas.itemconfigure(content_id, width=event.width))
+        self.root.bind("<MouseWheel>", self._scroll_workspace, add="+")
+
+        header = tk.Frame(outer, bg=COLORS["bg"])
+        header.pack(fill="x", pady=(0, 18))
+        title_block = tk.Frame(header, bg=COLORS["bg"])
+        title_block.pack(side="left")
+        self._label(title_block, "市场研究  /  行情总览", 9, COLORS["muted"]).pack(anchor="w")
+        self._label(title_block, "行情总览", 22, weight="bold").pack(anchor="w", pady=(5, 0))
+        self.refresh_button = self._button(header, "↻  刷新本地", self.refresh)
+        self.refresh_button.pack(side="right", anchor="center")
 
         toolbar = self._panel(outer)
         toolbar.configure(padx=16, pady=12)
-        toolbar.pack(fill="x", pady=(0, 10))
+        toolbar.pack(fill="x", pady=(0, 12))
         selectors = tk.Frame(toolbar, bg=COLORS["panel"])
         selectors.pack(side="left", fill="x", expand=True)
         self.symbol_choices = self._build_symbol_choices()
@@ -327,17 +377,8 @@ class MarketDesktopApp:
         self.symbol_var = tk.StringVar(value=names[0])
         self.symbol_box = self._selector_control(selectors, "当前标的", self.symbol_var, names, 28, self._on_symbol_change)
         self.period_var = tk.StringVar(value="1年")
-        self._selector_control(selectors, "查看范围", self.period_var, list(PERIODS), 8, lambda _event: self.refresh(), last=True)
-        buttons = tk.Frame(toolbar, bg=COLORS["panel"])
-        buttons.pack(side="right", padx=(14, 0), anchor="s")
-        self.update_button = self._action_button(buttons, "更新数据", self.update_online, "button", "mint")
-        self.update_button.pack(side="left", padx=(0, 8))
-        self._action_button(buttons, "AI 对话", self.open_ai_chat, "rank_button", "cyan").pack(side="left", padx=(0, 8))
-        self.refresh_button = self._action_button(buttons, "刷新", self.refresh, "mint", "bg")
-        self.refresh_button.pack(side="left")
-
-        self.status_var = tk.StringVar(value="正在读取本地行情…")
-        self._label(outer, "", 8, COLORS["cyan"], textvariable=self.status_var).pack(fill="x", pady=(0, 8))
+        self._selector_control(selectors, "查看范围", self.period_var, list(PERIODS), 8,
+                               lambda _event: self.refresh(), last=True)
 
         summary = self._panel(outer)
         summary.configure(padx=18, pady=14)
@@ -398,6 +439,55 @@ class MarketDesktopApp:
             activebackground=COLORS["button_hover"], activeforeground=COLORS["text"], relief="flat",
             padx=16, pady=8, cursor="hand2", font=("Microsoft YaHei UI", 9, "bold"),
         )
+
+    def _button(self, parent: tk.Misc, text: str, command: Any, *, primary: bool = False) -> tk.Button:
+        return tk.Button(
+            parent, text=text, command=command,
+            bg=COLORS["selected"] if primary else parent.cget("bg"),
+            fg=COLORS["mint"] if primary else COLORS["soft_text"],
+            activebackground=COLORS["button_hover"], activeforeground=COLORS["text"],
+            relief="flat", borderwidth=0, padx=14, pady=9, anchor="w",
+            cursor="hand2", font=("Microsoft YaHei UI", 9),
+            highlightcolor=COLORS["mint"], highlightthickness=1,
+            highlightbackground=COLORS["selected"] if primary else COLORS["line"],
+        )
+
+    def _scroll_workspace(self, event: Any) -> None:
+        widget = event.widget
+        if isinstance(widget, (ttk.Combobox, ttk.Treeview)):
+            return
+        while widget is not None:
+            if widget == self.content_canvas:
+                bounds = self.content_canvas.bbox("all")
+                if bounds and bounds[3] > self.content_canvas.winfo_height():
+                    self.content_canvas.yview_scroll(-int(event.delta / 120), "units")
+                return
+            widget = getattr(widget, "master", None)
+
+    def _style_titlebar(self, window: tk.Misc | None = None) -> None:
+        """Match native Windows chrome while retaining resize and snap controls."""
+        if os.name != "nt":
+            return
+        window = window or self.root
+        try:
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            user32.GetParent.argtypes = [wintypes.HWND]
+            user32.GetParent.restype = wintypes.HWND
+            hwnd = user32.GetParent(window.winfo_id())
+            set_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            set_attribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+            background = COLORS["panel"]
+            dark = ctypes.c_int(sum(int(background[index:index + 2], 16) for index in (1, 3, 5)) < 384)
+            if set_attribute(hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark)) != 0:
+                set_attribute(hwnd, 19, ctypes.byref(dark), ctypes.sizeof(dark))
+            for attribute, color in ((35, background), (36, COLORS["text"]), (34, COLORS["line"])):
+                value = ctypes.c_uint32(
+                    int(color[1:3], 16) | int(color[3:5], 16) << 8 | int(color[5:7], 16) << 16
+                )
+                set_attribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+        except (AttributeError, OSError, tk.TclError):
+            pass
 
     def _build_more_menu(self, parent: tk.Misc) -> tk.Menubutton:
         button = tk.Menubutton(
@@ -472,15 +562,19 @@ class MarketDesktopApp:
         command: Any | None = None,
         *,
         last: bool = False,
+        stacked: bool = False,
     ) -> ttk.Combobox:
         group = tk.Frame(parent, bg=COLORS["panel"])
-        group.pack(side="left", padx=(0, 0 if last else 10))
+        if stacked:
+            group.pack(fill="x", pady=(0, 12))
+        else:
+            group.pack(side="left", padx=(0, 0 if last else 10))
         self._label(group, label, 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
         box = ttk.Combobox(
             group, textvariable=variable, values=values, state="readonly",
             width=width, style="Toolbar.TCombobox", height=min(16, len(values)),
         )
-        box.pack(anchor="w")
+        box.pack(anchor="w", fill="x" if stacked else "none")
         box.configure(postcommand=lambda widget=box: self._style_combobox_popup(widget))
         if command is not None:
             box.bind("<<ComboboxSelected>>", command)
@@ -513,6 +607,7 @@ class MarketDesktopApp:
         self.root.configure(bg=COLORS["bg"])
         self._configure_styles()
         self._recolor_widget(self.root, color_map)
+        self._style_titlebar()
         for menu in getattr(self, "_themed_menus", ()):
             menu.configure(
                 bg=COLORS["panel"], fg=COLORS["text"],
@@ -521,6 +616,8 @@ class MarketDesktopApp:
         for widget in self._walk_widgets(self.root):
             if isinstance(widget, LineChart):
                 widget.redraw()
+            elif isinstance(widget, tk.Toplevel):
+                self._style_titlebar(widget)
 
     @classmethod
     def _walk_widgets(cls, widget: tk.Misc):
@@ -1346,6 +1443,81 @@ class MarketDesktopApp:
         else:
             self.status_var.set("在线数据已是最新")
         self.refresh()
+
+    def open_ma_dynamic(self) -> None:
+        from tkinter.scrolledtext import ScrolledText
+        symbol = self.symbol_choices[self.symbol_var.get()]
+        window = tk.Toplevel(self.root)
+        window.after_idle(lambda: self._style_titlebar(window))
+        window.title("MA 动态策略 V1 · Marketor")
+        window.geometry("960x660")
+        controls = ttk.Frame(window)
+        controls.pack(fill="x", padx=12, pady=12)
+        ttk.Label(controls, text="起始日（YYYY-MM-DD，留空为全部）").pack(side="left")
+        start_var, end_var = tk.StringVar(), tk.StringVar()
+        ttk.Entry(controls, textvariable=start_var, width=12).pack(side="left", padx=6)
+        ttk.Label(controls, text="截止日").pack(side="left")
+        ttk.Entry(controls, textvariable=end_var, width=12).pack(side="left", padx=6)
+        output = ScrolledText(window, wrap="word", font=("Microsoft YaHei UI", 10))
+        output.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+        def display(text: str) -> None:
+            if not window.winfo_exists():
+                return
+            output.configure(state="normal")
+            output.delete("1.0", "end")
+            output.insert("end", text)
+            output.configure(state="disabled")
+            run_button.configure(state="normal")
+
+        def run() -> None:
+            start, end = start_var.get().strip() or None, end_var.get().strip() or None
+            run_button.configure(state="disabled")
+
+            def work() -> None:
+                try:
+                    result = MarketService(symbol, catalog=self.catalog).ma_dynamic(start, end)
+                    lines = [
+                        result["name"], f"标的：{symbol}",
+                        "首次：价格 ≤ MA500 × 1.10，投入10,000元。之后仅使用 MA250。",
+                        "亏损日：乖离 ≤ -5%/-10%/-15%，加仓当日亏损的50%/75%/100%。",
+                        "盈利日：乖离 ≥ +10%/+15%/+20%，减仓当日盈利的50%/75%/100%。",
+                        "卖出进入现金池；加仓先用现金，再追加外部资金。",
+                        result["rules"]["daily_pnl_basis"], result["rules"]["execution"],
+                        result["rules"]["note"], "",
+                    ]
+                    if result["status"] != "ok":
+                        lines.append(result["message"])
+                        if "entry_eligible_today" in result:
+                            lines.append("今日首次建仓价格条件：" + ("满足" if result["entry_eligible_today"] else "不满足或均线不足"))
+                        lines.append("完整回测需配置匹配的全收益 CSV 及来源记录，详见 README。")
+                    else:
+                        summary = result["summary"]
+                        lines.extend([
+                            f"回测：{result['start']} — {result['end']}",
+                            f"持仓 {summary['holding_value']:,.2f}元 · 现金 {summary['cash']:,.2f}元",
+                            f"累计外部投入 {summary['external_total']:,.2f}元 · 总盈亏 {summary['profit']:,.2f}元",
+                            "", "交易日 | 操作 | 当日盈亏 | 买入 | 卖出 | 使用现金 | 追加外部资金",
+                        ])
+                        for row in result["ledger"]:
+                            if row["action"] in ("wait", "hold"):
+                                continue
+                            action = {"initial_buy": "首次建仓", "buy": "加仓", "sell": "减仓"}[row["action"]]
+                            lines.append(
+                                f"{row['date']} | {action} | {row['daily_pnl']:.2f} | "
+                                f"{row['buy_amount']:.2f} | {row['sell_amount']:.2f} | "
+                                f"{row['cash_used']:.2f} | {row['external_added']:.2f}"
+                            )
+                    text = "\n".join(lines)
+                except Exception as exc:
+                    text = f"无法回测：{exc}"
+                self.root.after(0, display, text)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        run_button = ttk.Button(controls, text="运行回测", command=run)
+        run_button.pack(side="left", padx=6)
+        run()
 
     def _load_data(self, symbol: str, days: int) -> None:
         try:

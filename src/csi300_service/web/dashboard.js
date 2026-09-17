@@ -191,13 +191,13 @@ function renderHeader(instrument, latest) {
 
 function renderSignal(signal) {
   const sides = [
-    { key: "accumulation", level: "buy-level", score: "buy-score", action: "buy-action", reasons: "buy-reasons", suffix: "×" },
+    { key: "accumulation", level: "buy-level", score: "buy-score", action: "buy-action", reasons: "buy-reasons", suffix: "%" },
     { key: "reduction", level: "sell-level", score: "sell-score", action: "sell-action", reasons: "sell-reasons", suffix: "%" },
   ];
   sides.forEach(({ key, level, score, action, reasons, suffix }) => {
     const item = signal[key];
     $(level).textContent = `${item.level}信号`;
-    $(score).textContent = key === "accumulation" ? `${Number(item.score).toFixed(1)}${suffix}` : `${Number(item.score).toFixed(0)}${suffix}`;
+    $(score).textContent = `${Number(item.score).toFixed(0)}${suffix}`;
     $(action).textContent = item.suggested_action;
     const list = $(reasons);
     list.replaceChildren(...item.reasons.map((reason) => {
@@ -219,9 +219,10 @@ function linePath(rows, key, x, y) {
 
 function renderChart(rows) {
   const host = $("chart");
+  state.chartRows = rows;
   host.replaceChildren();
   if (!rows.length) { host.innerHTML = '<div class="chart-empty">所选周期暂无数据</div>'; return; }
-  const width = 1200, height = 360, margin = { top: 12, right: 66, bottom: 28, left: 8 };
+  const width = Math.max(320, host.clientWidth), height = Math.max(260, host.clientHeight), margin = { top: 12, right: 66, bottom: 28, left: 8 };
   const series = ["close", "ma60", "ma250", "ma500", "ma1250"];
   const values = rows.flatMap((row) => series.map((key) => row[key]).filter((value) => value != null));
   const rawMin = Math.min(...values), rawMax = Math.max(...values), pad = Math.max((rawMax - rawMin) * .09, rawMax * .01);
@@ -243,7 +244,7 @@ function renderChart(rows) {
     const label = document.createElementNS(svg.namespaceURI, "text");
     label.setAttribute("x", x(index)); label.setAttribute("y", height - 4); label.setAttribute("text-anchor", i === 0 ? "start" : i === 2 ? "end" : "middle"); label.setAttribute("class", "chart-label"); label.textContent = rows[index].date; svg.append(label);
   });
-  const colors = { close: "#eff8f4", ma60: "#c3b3f0", ma250: "#72e6bc", ma500: "#e6bd70", ma1250: "#5fc9db" };
+  const colors = { close: "#edf2f3", ma60: "#c3b3f0", ma250: "#71d4bc", ma500: "#ddbd80", ma1250: "#83bfe0" };
   series.forEach((key) => {
     const path = document.createElementNS(svg.namespaceURI, "path");
     path.setAttribute("d", linePath(rows, key, x, y)); path.setAttribute("class", "chart-line"); path.setAttribute("stroke", colors[key]); path.setAttribute("stroke-width", key === "close" ? "2.3" : "1.55"); path.setAttribute("opacity", key === "close" ? "1" : ".9"); svg.append(path);
@@ -266,6 +267,20 @@ async function loadDashboard() {
   showStatus("正在读取本地行情…", "loading");
   const symbol = encodeURIComponent(state.symbol);
   const method = encodeURIComponent(methodDropdown.value);
+  $("ma-dynamic-status").textContent = "正在读取策略…";
+  $("ma-dynamic-summary").textContent = "";
+  fetchJson(`/strategies/ma-dynamic-v1?symbol=${symbol}`).then((result) => {
+    if (symbol !== encodeURIComponent(state.symbol)) return;
+    $("ma-dynamic-status").textContent = result.status === "ok"
+      ? `回测 ${result.start} — ${result.end} · 全收益指数 ${result.total_return_code}`
+      : result.message;
+    if (result.summary) {
+      const s = result.summary;
+      $("ma-dynamic-summary").textContent = `持仓 ${formatNumber(s.holding_value)}元 · 现金池 ${formatNumber(s.cash)}元 · 累计外部投入 ${formatNumber(s.external_total)}元 · 总盈亏 ${formatNumber(s.profit)}元 · 交易 ${s.trade_count}次`;
+    }
+  }).catch((error) => {
+    if (symbol === encodeURIComponent(state.symbol)) $("ma-dynamic-status").textContent = `无法回测：${error.message}`;
+  });
   try {
     const [latest, signal, indicators, returns] = await Promise.all([
       fetchJson(`/latest?symbol=${symbol}`), fetchJson(`/signal?symbol=${symbol}`),
@@ -309,3 +324,24 @@ async function boot() {
 }
 
 document.addEventListener("DOMContentLoaded", boot);
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (state.chartRows) renderChart(state.chartRows); }, 100);
+});
+const navigationSections = ["overview", "trend", "signals", "history"].map($);
+function updateNavigation() {
+  const boundary = Math.min(180, window.innerHeight * .3);
+  const current = navigationSections.filter(section => section.getBoundingClientRect().top <= boundary).pop() || navigationSections[0];
+  document.querySelectorAll(".sidebar nav a").forEach(link => {
+    if (link.hash === `#${current.id}`) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  });
+}
+let navigationFrame = null;
+window.addEventListener("scroll", () => {
+  if (navigationFrame !== null) return;
+  navigationFrame = requestAnimationFrame(() => { updateNavigation(); navigationFrame = null; });
+}, { passive: true });
+window.addEventListener("resize", updateNavigation);
+updateNavigation();

@@ -4,20 +4,67 @@ import pandas as pd
 import pytest
 
 from csi300_service.catalog import InstrumentCatalog, default_data_dir
+from csi300_service.legacy_strategy import evaluate as evaluate_legacy
 from csi300_service.service import CSI300Service, MarketService
 from csi300_service.statistics import register_statistics_method
+from csi300_service.strategy import evaluate
 
 
 def test_latest_and_signal():
     s = CSI300Service()
     latest = s.latest()
-    assert latest["date"] == "2026-08-28"
+    assert latest["date"] == s.metadata()["last_date"]
     assert latest["close"] > 0
     signal = s.signal()
+    assert signal["strategy_id"] == "ma_dynamic_v1"
     assert "accumulation" in signal
     assert "reduction" in signal
-    assert 1.0 <= signal["accumulation"]["score"] <= 3.0
-    assert 0 <= signal["reduction"]["score"] <= 40
+    assert signal["accumulation"]["score"] in (0, 50, 75, 100)
+    assert signal["reduction"]["score"] in (0, 50, 75, 100)
+    assert signal["initial_entry"]["amount"] == 10000
+    assert signal["portfolio_state_required"] is True
+
+
+@pytest.mark.parametrize("bias,buy,sell", [
+    (-0.049999, 0, 0), (-0.05, 50, 0), (-0.10, 75, 0), (-0.15, 100, 0),
+    (0.099999, 0, 0), (0.10, 0, 50), (0.15, 0, 75), (0.20, 0, 100),
+    (0.0, 0, 0),
+])
+def test_current_signal_uses_v1_tiers(bias, buy, sell):
+    signal = evaluate({
+        "date": "2026-09-14", "close": 100.0, "ma500": 100.0,
+        "bias500": 0.0, "bias250": bias,
+    })
+    assert signal["strategy_id"] == "ma_dynamic_v1"
+    assert signal["accumulation"]["score"] == buy
+    assert signal["reduction"]["score"] == sell
+
+
+def test_current_signal_entry_uses_ma500_price_gate():
+    eligible = evaluate({
+        "date": "2026-09-14", "close": 110.0, "ma500": 100.0,
+        "bias500": 0.10, "bias250": 0.0,
+    })
+    blocked = evaluate({
+        "date": "2026-09-14", "close": 110.000001, "ma500": 100.0,
+        "bias500": 0.10000001, "bias250": 0.0,
+    })
+    assert eligible["initial_entry"]["eligible"] is True
+    assert blocked["initial_entry"]["eligible"] is False
+
+
+def test_legacy_strategy_remains_separate_from_v1():
+    row = {
+        "date": "2026-09-14", "close": 100, "bias250": -0.10,
+        "bias500": 0.20, "bias1250": 0.30, "rsi14": 29,
+        "rsi_cross_down_75": True, "rsi_cross_down_70": True,
+    }
+    legacy = evaluate_legacy(row)
+    current = evaluate({**row, "ma500": 100})
+    assert legacy["accumulation"]["score"] == 3.0
+    assert legacy["reduction"]["score"] == 40
+    assert current["accumulation"]["score"] == 75
+    assert current["reduction"]["score"] == 0
 
 
 def test_history_range():

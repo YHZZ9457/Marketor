@@ -124,8 +124,8 @@ def update(
         "ma1250": latest.get("ma1250"),
         "bias1250": latest.get("bias1250"),
         "rsi14": latest.get("rsi14"),
-        "buy_multiplier": signal["accumulation"]["score"],
-        "sell_reduction_pct": signal["reduction"]["score"],
+        "v1_buy_fraction_pct": signal["accumulation"]["score"],
+        "v1_sell_fraction_pct": signal["reduction"]["score"],
         "amount_unit": result.amount_unit,
     }
     _print(output)
@@ -160,3 +160,18 @@ def bootstrap(
     """为目录中尚无 CSV 的标的初始化历史行情。"""
     result = MarketDataUpdater(symbol, source_mode=source).bootstrap(start_date=start, force=force)
     _print(result.to_dict())
+
+
+@app.command("ma-dynamic")
+def ma_dynamic(symbol: str = typer.Option("csi300", help="标的代码"),
+               start: str | None = None, end: str | None = None,
+               ledger: bool = False):
+    """沪深300 MA动态策略 V1；--ledger 输出逐日交易账本。"""
+    try:
+        result = MarketService(symbol).ma_dynamic(start, end, ledger)
+    except (ValueError, KeyError, OSError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    _print(result)
+    if result["status"] != "ok":
+        raise typer.Exit(code=1)

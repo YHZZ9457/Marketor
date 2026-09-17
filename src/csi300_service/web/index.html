@@ -8,14 +8,24 @@
   <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
-  <div class="ambient ambient-one"></div>
-  <div class="ambient ambient-two"></div>
+  <a class="skip-link" href="#overview">跳到行情总览</a>
+  <aside class="sidebar" aria-label="工作空间导航">
+    <a class="brand" href="#overview"><span class="brand-mark">◈</span><span>市场航图<small>MARKET COMPASS</small></span></a>
+    <p class="nav-caption">工作空间</p>
+    <nav>
+      <a href="#overview" aria-current="location"><span>◉</span>行情总览</a>
+      <a href="#trend"><span>⌁</span>趋势分析</a>
+      <a href="#signals"><span>◇</span>策略条件</a>
+      <a href="#history"><span>▤</span>历史收益</a>
+    </nav>
+    <div class="sidebar-foot"><span class="local-dot"></span> 本地研究工作台<small>数据留在本地 · 决策保持独立</small><a href="/docs" target="_blank" rel="noreferrer">API 文档 ↗</a></div>
+  </aside>
   <main class="shell">
-    <header class="topbar">
+    <header class="topbar" id="overview">
       <div>
-        <p class="eyebrow">LOCAL MARKET CONSOLE</p>
-        <h1>市场航图</h1>
-        <p class="subtitle">把长期位置、短期动量与历史胜率放在同一张桌面上。</p>
+        <p class="eyebrow">市场研究 / 行情总览</p>
+        <h1>行情总览</h1>
+        <p class="subtitle">观察长期位置，理解当下市场。</p>
       </div>
       <div class="controls" aria-label="行情控制">
         <label>
@@ -67,7 +77,7 @@
       </article>
     </section>
 
-    <section class="chart-panel panel">
+    <section class="chart-panel panel" id="trend">
       <div class="section-head">
         <div>
           <p class="kicker">PRICE & LONG CYCLES</p>
@@ -90,22 +100,31 @@
       <div id="chart" class="chart" aria-label="行情走势图"></div>
     </section>
 
-    <section class="decision-grid">
+    <section class="decision-grid" id="signals">
       <article id="buy-card" class="signal-card panel buy-card">
-        <div class="signal-title"><div><p class="kicker">ACCUMULATION</p><h2>加仓辅助</h2></div><span id="buy-level" class="signal-level">—</span></div>
+        <div class="signal-title"><div><p class="kicker">MA DYNAMIC V1</p><h2>V1 加仓条件</h2></div><span id="buy-level" class="signal-level">—</span></div>
         <strong id="buy-score" class="signal-score">—</strong>
         <p id="buy-action" class="signal-action">—</p>
         <ul id="buy-reasons" class="reason-list"></ul>
       </article>
       <article id="sell-card" class="signal-card panel sell-card">
-        <div class="signal-title"><div><p class="kicker">REDUCTION</p><h2>减仓辅助</h2></div><span id="sell-level" class="signal-level">—</span></div>
+        <div class="signal-title"><div><p class="kicker">MA DYNAMIC V1</p><h2>V1 减仓条件</h2></div><span id="sell-level" class="signal-level">—</span></div>
         <strong id="sell-score" class="signal-score">—</strong>
         <p id="sell-action" class="signal-action">—</p>
         <ul id="sell-reasons" class="reason-list"></ul>
       </article>
     </section>
 
-    <section class="returns-panel panel">
+    <section class="returns-panel panel" id="ma-dynamic-panel">
+      <div class="section-head"><h2>沪深300 MA动态策略 V1</h2></div>
+      <details class="strategy-details"><summary>查看策略规则与回测假设</summary><p>首次价格 ≤ MA500 × 1.10，投入10,000元；之后按 MA250 乖离和当日全收益持仓盈亏交易。</p>
+      <p>亏损日 ≤ -5% / -10% / -15% 加仓亏损的50% / 75% / 100%；盈利日 ≥ +10% / +15% / +20% 减仓盈利的50% / 75% / 100%。只取最高档。</p>
+      <p>卖出进入现金池，加仓先用现金、不足再追加；现金不计息，收盘模拟成交，未计费用及滑点。</p></details>
+      <p id="ma-dynamic-status" aria-live="polite">正在读取策略…</p>
+      <p id="ma-dynamic-summary"></p>
+    </section>
+
+    <section class="returns-panel panel" id="history">
       <div class="section-head">
         <div><p class="kicker">HISTORICAL ODDS</p><h2>历史持有收益</h2></div>
         <label class="method-label">统计口径

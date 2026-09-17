@@ -63,6 +63,31 @@ class MarketService:
             return evaluate_adaptive(latest, profile.to_dict(), previous)
         return evaluate(latest, previous)
 
+    def ma_dynamic(self, start: str | None = None, end: str | None = None,
+                   include_ledger: bool = True) -> dict:
+        from .ma_dynamic import STRATEGY_ID, STRATEGY_NAME, RULES, backtest, load_total_return
+        instrument = self.instrument
+        base = {"strategy_id": STRATEGY_ID, "name": STRATEGY_NAME,
+                "symbol": instrument.symbol, "rules": RULES}
+        if STRATEGY_ID not in instrument.strategies:
+            return {**base, "status": "unsupported", "message": "该指数未启用此策略"}
+        latest = self.latest()
+        base["entry_eligible_today"] = (latest.get("ma500") is not None
+                                        and latest["close"] <= latest["ma500"] * 1.10)
+        base["total_return_code"] = instrument.total_return_code
+        if not instrument.total_return_code or not instrument.total_return_file:
+            return {**base, "status": "data_unavailable", "message": "尚未配置全收益指数"}
+        try:
+            tri, provenance = load_total_return(
+                self.catalog.config_path.parent.resolve() / instrument.total_return_file,
+                instrument.total_return_code)
+        except (ValueError, OSError) as exc:
+            return {**base, "status": "data_unavailable", "message": str(exc)}
+        result = backtest(self.df, tri, start, end)
+        if not include_ledger:
+            result.pop("ledger")
+        return {**base, **result, "source": provenance}
+
     def holding_returns(
         self,
         calendar_days: Iterable[int] = (1, 7, 30, 365, 730, 1095, 1825),

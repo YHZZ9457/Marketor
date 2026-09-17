@@ -26,7 +26,7 @@ def test_instruments_and_default_compatibility():
 
     latest = client.get("/latest")
     assert latest.status_code == 200
-    assert latest.json()["date"] == "2026-08-28"
+    assert latest.json()["date"] == instruments.json()[0]["last_date"]
 
 
 def test_selectable_statistics_method():
