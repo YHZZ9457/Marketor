@@ -7,7 +7,7 @@ from .catalog import Instrument, InstrumentCatalog
 from .data import load_data
 from .indicators import add_indicators
 from .statistics import statistics_methods, summarize_returns
-from .strategy import evaluate, evaluate_adaptive
+from .strategy import evaluate, evaluate_adaptive, daily_reference
 from .ai_strategy import load_strategy_profile
 
 
@@ -55,13 +55,16 @@ class MarketService:
         cols = [c for c in ["date", "open", "high", "low", "close", "amount", "daily_return", "return", "net_value"] if c in df.columns]
         return [self._row_to_dict(row[cols]) for _, row in df.iterrows()]
 
-    def signal(self) -> dict:
+    def signal(self, equity: float = 10000.0) -> dict:
         latest = self._row_to_dict(self.df.iloc[-1])
         previous = self._row_to_dict(self.df.iloc[-2]) if len(self.df) > 1 else None
         profile = load_strategy_profile(self.instrument.symbol)
-        if profile is not None and profile.active:
+        if self.instrument.asset_class != "index" and profile is not None and profile.active:
             return evaluate_adaptive(latest, profile.to_dict(), previous)
-        return evaluate(latest, previous)
+        result = evaluate(latest, previous)
+        result["model_policy"] = "所有指数暂时统一V1；已保存的AI配置不覆盖指数信号"
+        result["daily_reference"] = daily_reference(latest, equity)
+        return result
 
     def ma_dynamic(self, start: str | None = None, end: str | None = None,
                    include_ledger: bool = True) -> dict:

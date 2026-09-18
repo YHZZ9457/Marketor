@@ -100,6 +100,10 @@
       <div id="chart" class="chart" aria-label="行情走势图"></div>
     </section>
 
+    <section class="panel" aria-label="V1金额换算">
+      <label>收盘交易前权益市值（元） <input id="reference-equity" type="number" min="0" step="any" value="10000"></label>
+      <p id="reference-result" aria-live="polite">加载每万元参考…</p>
+    </section>
     <section class="decision-grid" id="signals">
       <article id="buy-card" class="signal-card panel buy-card">
         <div class="signal-title"><div><p class="kicker">MA DYNAMIC V1</p><h2>V1 加仓条件</h2></div><span id="buy-level" class="signal-level">—</span></div>
@@ -116,7 +120,7 @@
     </section>
 
     <section class="returns-panel panel" id="ma-dynamic-panel">
-      <div class="section-head"><h2>沪深300 MA动态策略 V1</h2></div>
+        <div class="section-head"><h2>MA动态策略 V1 · 所有指数暂时统一适用</h2></div>
       <details class="strategy-details"><summary>查看策略规则与回测假设</summary><p>首次价格 ≤ MA500 × 1.10，投入10,000元；之后按 MA250 乖离和当日全收益持仓盈亏交易。</p>
       <p>亏损日 ≤ -5% / -10% / -15% 加仓亏损的50% / 75% / 100%；盈利日 ≥ +10% / +15% / +20% 减仓盈利的50% / 75% / 100%。只取最高档。</p>
       <p>卖出进入现金池，加仓先用现金、不足再追加；现金不计息，收盘模拟成交，未计费用及滑点。</p></details>

@@ -190,6 +190,8 @@ function renderHeader(instrument, latest) {
 }
 
 function renderSignal(signal) {
+  state.reference = signal.daily_reference;
+  renderReference();
   const sides = [
     { key: "accumulation", level: "buy-level", score: "buy-score", action: "buy-action", reasons: "buy-reasons", suffix: "%" },
     { key: "reduction", level: "sell-level", score: "sell-score", action: "sell-action", reasons: "sell-reasons", suffix: "%" },
@@ -197,7 +199,10 @@ function renderSignal(signal) {
   sides.forEach(({ key, level, score, action, reasons, suffix }) => {
     const item = signal[key];
     $(level).textContent = `${item.level}信号`;
-    $(score).textContent = `${Number(item.score).toFixed(0)}${suffix}`;
+    const ref = signal.daily_reference;
+    $(score).textContent = ref?.status === "ok"
+      ? `${formatNumber(ref[key === "accumulation" ? "baseline_buy" : "baseline_sell"])} 元/万元`
+      : `${Number(item.score).toFixed(0)}${suffix}`;
     $(action).textContent = item.suggested_action;
     const list = $(reasons);
     list.replaceChildren(...item.reasons.map((reason) => {
@@ -205,6 +210,23 @@ function renderSignal(signal) {
     }));
   });
 }
+
+function renderReference() {
+  const ref = state.reference;
+  const raw = $("reference-equity").value.trim();
+  const equity = Number(raw);
+  if (!raw || !Number.isFinite(equity) || equity < 0) {
+    $("reference-result").textContent = "请输入非负、有限的权益市值";
+    return;
+  }
+  if (!ref || ref.status !== "ok") {
+    $("reference-result").textContent = "暂无V1金额参考：需有效日收益和MA250数据";
+    return;
+  }
+  const coefficient = equity / 10000;
+  $("reference-result").textContent = `${ref.date} · 系数 ${coefficient} · 加仓 ${formatNumber(ref.baseline_buy * coefficient)} 元 / 减仓 ${formatNumber(ref.baseline_sell * coefficient)} 元。${ref.basis}。${ref.note}`;
+}
+$("reference-equity").addEventListener("input", renderReference);
 
 function linePath(rows, key, x, y) {
   let started = false;

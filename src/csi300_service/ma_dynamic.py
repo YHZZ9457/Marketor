@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 STRATEGY_ID = "ma_dynamic_v1"
-STRATEGY_NAME = "沪深300 MA动态策略 V1"
+STRATEGY_NAME = "MA动态策略 V1"
 RULES = {
     "initial_amount": 10000.0,
     "entry_ma500_multiple": 1.10,

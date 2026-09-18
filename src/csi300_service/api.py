@@ -13,7 +13,7 @@ from .events import EventBacktester
 from .service import MarketService
 from .statistics import statistics_methods
 
-app = FastAPI(title="Market Analysis Service", version="0.20.0")
+app = FastAPI(title="Market Analysis Service", version="0.21.0")
 catalog = InstrumentCatalog()
 web_dir = Path(__file__).resolve().parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
@@ -88,8 +88,8 @@ def history(start: str | None = None, end: str | None = None, limit: int = Query
 
 
 @app.get("/signal")
-def signal(symbol: str = "csi300"):
-    return _service(symbol).signal()
+def signal(symbol: str = "csi300", equity: float = Query(10000, ge=0, allow_inf_nan=False)):
+    return _service(symbol).signal(equity)
 
 
 @app.get("/holding-returns")

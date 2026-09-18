@@ -7,6 +7,7 @@ import pandas as pd
 
 from .catalog import InstrumentCatalog
 from .service import MarketService
+from .strategy import daily_reference
 
 
 def _percentile(series: pd.Series, value: float | None) -> float | None:
@@ -69,6 +70,7 @@ def instrument_snapshot(service: MarketService) -> dict[str, Any]:
         "symbol": service.instrument.symbol,
         "name": service.instrument.name,
         "date": latest["date"],
+        "daily_reference": daily_reference(latest),
         "close": latest["close"],
         "bias250": latest.get("bias250"),
         "bias500": latest.get("bias500"),

@@ -25,6 +25,26 @@ def _pct(x: float | None) -> str:
     return f"{x * 100:.2f}%"
 
 
+def daily_reference(latest: dict[str, Any], equity: float = 10000.0) -> dict[str, Any]:
+    """Normalize an existing holding at today's close, before the simulated trade."""
+    if not math.isfinite(equity) or equity < 0:
+        raise ValueError("权益市值必须是有限的非负数")
+    bias, rate = latest.get("bias250"), latest.get("daily_return")
+    result = {"date": str(latest.get("date"))[:10], "baseline_equity": 10000.0,
+              "equity": equity, "coefficient": equity / 10000,
+              "basis": "价格涨跌估算（未含分红），当日收盘交易前权益市值；假设全天持仓份额不变",
+              "note": "已有持仓参考，不包含首次建仓；加仓先用现金池，不等于必须新增资金。"}
+    if any(v is None or not math.isfinite(float(v)) for v in (bias, rate)) or float(rate) <= -1:
+        return {**result, "status": "unavailable", "message": "缺少有效日收益或MA250数据"}
+    pnl = 10000 * float(rate) / (1 + float(rate))
+    fraction = trade_fraction(float(bias), pnl)
+    buy, sell = max(-pnl, 0) * fraction, min(max(pnl, 0) * fraction, 10000)
+    return {**result, "status": "ok", "daily_return": float(rate), "fraction": fraction,
+            "baseline_pnl": pnl, "baseline_buy": buy, "baseline_sell": sell,
+            "buy_amount": buy * equity / 10000, "sell_amount": sell * equity / 10000,
+            "signed_amount_per_10000": buy - sell}
+
+
 def evaluate(latest: dict[str, Any], previous: dict[str, Any] | None = None) -> dict[str, Any]:
     """Return V1 conditional guidance without inventing portfolio state.
 

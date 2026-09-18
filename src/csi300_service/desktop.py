@@ -312,7 +312,7 @@ class MarketDesktopApp:
         brand = tk.Frame(sidebar, bg=COLORS["panel"], padx=20, pady=24)
         brand.pack(fill="x")
         self._label(brand, "◈  市场航图", 16, weight="bold").pack(anchor="w")
-        self._label(brand, "MARKET COMPASS · v0.20", 8, COLORS["muted"]).pack(anchor="w", pady=(7, 0))
+        self._label(brand, "MARKET COMPASS · v0.21", 8, COLORS["muted"]).pack(anchor="w", pady=(7, 0))
         tk.Frame(sidebar, bg=COLORS["line"], height=1).pack(fill="x", padx=20)
 
         nav = tk.Frame(sidebar, bg=COLORS["panel"], padx=12, pady=18)
@@ -393,6 +393,14 @@ class MarketDesktopApp:
         summary_body.grid_columnconfigure(1, weight=1, uniform="signal")
         self.buy_widgets = self._signal_summary(summary_body, 0, "加仓", COLORS["mint"])
         self.sell_widgets = self._signal_summary(summary_body, 1, "减仓", COLORS["coral"])
+        reference_bar = tk.Frame(outer, bg=COLORS["bg"])
+        reference_bar.pack(fill="x", pady=(0, 10))
+        self._label(reference_bar, "收盘交易前权益（元）", 9).pack(side="left")
+        self.reference_equity = tk.StringVar(value="10000")
+        ttk.Entry(reference_bar, textvariable=self.reference_equity, width=12).pack(side="left", padx=8)
+        self.reference_text = self._label(reference_bar, "V1 参考加载中…", 9, COLORS["cyan"])
+        self.reference_text.pack(side="left")
+        self.reference_equity.trace_add("write", lambda *_: self._update_reference())
 
         cards = tk.Frame(outer, bg=COLORS["bg"])
         cards.pack(fill="x", pady=(0, 10))
@@ -1333,15 +1341,19 @@ class MarketDesktopApp:
         status = self._label(info, "正在计算历史分位…", 9, COLORS["muted"])
         status.pack(anchor="e")
         self._label(info, "双击指数查看年线低位独立事件", 8, COLORS["cyan"]).pack(anchor="e", pady=(3, 0))
-        columns = ("rank", "name", "bias250", "bias500", "rsi", "drawdown", "return1y", "volatility", "percentile", "buy", "sell", "state")
+        columns = ("rank", "name", "bias250", "bias500", "rsi", "drawdown", "return1y", "volatility", "percentile", "buy", "sell", "state", "date", "v1")
         tree = ttk.Treeview(window, columns=columns, show="headings")
         headings = ("排名", "指数", "250日乖离", "500日乖离", "RSI14", "一年回撤", "一年收益", "60日波动", "250乖离分位", "加仓分", "减仓分", "综合状态")
-        widths = (50, 110, 85, 85, 65, 85, 85, 85, 95, 65, 65, 100)
+        headings += ("行情日期", "V1元/万元 +加 −减")
+        widths = (50, 110, 85, 85, 65, 85, 85, 85, 95, 65, 65, 100, 90, 140)
         for column, heading, width in zip(columns, headings, widths):
             tree.heading(column, text=heading)
             tree.column(column, width=width, anchor="center", stretch=True)
         tree.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         tree.bind("<Double-1>", lambda _event: self._open_selected_events(tree))
+        scroll = ttk.Scrollbar(window, orient="horizontal", command=tree.xview)
+        scroll.pack(fill="x", padx=20)
+        tree.configure(xscrollcommand=scroll.set)
 
         def load() -> None:
             try:
@@ -1360,8 +1372,9 @@ class MarketDesktopApp:
                 format_number(row["rsi14"], 1), format_pct(row["drawdown_1y"]), format_pct(row["return_1y"]),
                 format_pct(row["volatility_60d"]), f"{row['bias250_percentile']:.1f}%" if row["bias250_percentile"] is not None else "—",
                 row["buy_score"], row["sell_score"], row["buy_state"] if row["buy_score"] >= row["sell_score"] else row["sell_state"],
+                row["date"], f"{row['daily_reference']['signed_amount_per_10000']:+.2f}" if row["daily_reference"]["status"] == "ok" else "数据不足",
             ))
-        status.configure(text=f"{rows[0]['date']} · 共 {len(rows)} 个指数", fg=COLORS["mint"])
+        status.configure(text=f"共 {len(rows)} 个标的 · V1价格估算，日期见各行", fg=COLORS["mint"])
 
     def _open_selected_events(self, tree: ttk.Treeview) -> None:
         selection = tree.selection()
@@ -1544,8 +1557,10 @@ class MarketDesktopApp:
         self.drawdown_card["value"].configure(text=format_pct(latest.get("drawdown_250d")), fg=direction_color(latest.get("drawdown_250d")))
         self.drawdown_card["detail"].configure(text=f"数据 {metadata['first_date']} — {metadata['last_date']}")
         self.chart.set_rows(payload["indicators"])
-        self._render_signal(self.buy_widgets, signal["accumulation"], "×")
+        self._render_signal(self.buy_widgets, signal["accumulation"], "%" if signal.get("strategy_id") == "ma_dynamic_v1" else "×")
         self._render_signal(self.sell_widgets, signal["reduction"], "%")
+        self.current_reference = signal.get("daily_reference")
+        self._update_reference()
         self.returns_table.delete(*self.returns_table.get_children())
         period_labels = {30: "1月", 365: "1年", 730: "2年", 1095: "3年", 1825: "5年"}
         for row in payload["returns"]:
@@ -1553,6 +1568,25 @@ class MarketDesktopApp:
         self.status_var.set(f"{self.provider_status} · {metadata['rows']:,} 条记录")
         self.refresh_button.configure(state="normal")
         self.update_button.configure(state="normal")
+
+    def _update_reference(self) -> None:
+        import math
+        ref = getattr(self, "current_reference", None)
+        if not ref or ref["status"] != "ok":
+            self.reference_text.configure(text="暂无V1金额参考（需有效日收益和MA250）")
+            return
+        try:
+            coefficient = float(self.reference_equity.get()) / 10000
+            if not math.isfinite(coefficient) or coefficient < 0:
+                raise ValueError
+        except ValueError:
+            self.reference_text.configure(text="请输入非负、有限的权益金额")
+            return
+        self.reference_text.configure(text=f"系数 {coefficient:g} · 加 {ref['baseline_buy'] * coefficient:.2f} 元 / 减 {ref['baseline_sell'] * coefficient:.2f} 元")
+        for widgets, key in ((self.buy_widgets, "baseline_buy"), (self.sell_widgets, "baseline_sell")):
+            widgets["score"].configure(text=f"{ref[key]:.2f}元")
+            widgets["level"].configure(text="每万元参考")
+            widgets["reasons"].configure(text=f"{ref['date']} · 价格涨跌估算，未含分红\n收盘交易前持仓1万元；实际金额 × 系数")
 
     @staticmethod
     def _render_signal(widgets: dict[str, tk.Label], signal: dict[str, Any], suffix: str) -> None:
