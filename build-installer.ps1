@@ -18,4 +18,4 @@ if (-not $iscc) { throw "Inno Setup 6 was not found." }
 & $iscc ".\installer\Marketor.iss"
 if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
 
-Write-Host "Installer created: installer-output\Marketor-Setup-0.21.0.exe"
+Write-Host "Installer created: installer-output\Marketor-Setup-0.21.1.exe"

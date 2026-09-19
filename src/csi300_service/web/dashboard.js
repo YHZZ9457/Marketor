@@ -215,6 +215,7 @@ function renderReference() {
   const ref = state.reference;
   const raw = $("reference-equity").value.trim();
   const equity = Number(raw);
+  document.querySelectorAll("[data-equity]").forEach((button) => button.classList.toggle("active", Number(button.dataset.equity) === equity));
   if (!raw || !Number.isFinite(equity) || equity < 0) {
     $("reference-result").textContent = "请输入非负、有限的权益市值";
     return;
@@ -227,6 +228,10 @@ function renderReference() {
   $("reference-result").textContent = `${ref.date} · 系数 ${coefficient} · 加仓 ${formatNumber(ref.baseline_buy * coefficient)} 元 / 减仓 ${formatNumber(ref.baseline_sell * coefficient)} 元。${ref.basis}。${ref.note}`;
 }
 $("reference-equity").addEventListener("input", renderReference);
+document.querySelectorAll("[data-equity]").forEach((button) => button.addEventListener("click", () => {
+  $("reference-equity").value = button.dataset.equity;
+  renderReference();
+}));
 
 function linePath(rows, key, x, y) {
   let started = false;

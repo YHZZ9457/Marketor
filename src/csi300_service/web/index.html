@@ -100,9 +100,19 @@
       <div id="chart" class="chart" aria-label="行情走势图"></div>
     </section>
 
-    <section class="panel" aria-label="V1金额换算">
-      <label>收盘交易前权益市值（元） <input id="reference-equity" type="number" min="0" step="any" value="10000"></label>
-      <p id="reference-result" aria-live="polite">加载每万元参考…</p>
+    <section class="reference-panel panel" aria-label="V1金额换算">
+      <div class="reference-heading">
+        <div><p class="kicker">POSITION CALCULATOR</p><h2>权益金额换算</h2></div>
+        <span class="date-chip">当日收盘 · 交易前市值</span>
+      </div>
+      <div class="reference-controls">
+        <label for="reference-equity">权益市值</label>
+        <div class="money-input"><span>¥</span><input id="reference-equity" inputmode="decimal" type="number" min="0" step="1000" value="10000" aria-describedby="reference-result"></div>
+        <div class="reference-presets" aria-label="快捷金额">
+          <button type="button" data-equity="10000">1万</button><button type="button" data-equity="50000">5万</button><button type="button" data-equity="100000">10万</button>
+        </div>
+      </div>
+      <p id="reference-result" class="reference-result" aria-live="polite">加载每万元参考…</p>
     </section>
     <section class="decision-grid" id="signals">
       <article id="buy-card" class="signal-card panel buy-card">

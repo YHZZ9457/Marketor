@@ -143,6 +143,21 @@ button:focus-visible { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(114
 .chart-line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-empty { height: 100%; display: grid; place-items: center; color: var(--muted); }
 .decision-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.reference-panel { margin-top: 14px; padding: 18px 22px; display: grid; grid-template-columns: auto minmax(360px, 1fr); gap: 12px 28px; align-items: center; }
+.reference-heading { display: flex; align-items: center; gap: 14px; }
+.reference-heading h2 { margin: 2px 0 0; font-size: 16px; }
+.reference-heading .kicker { margin: 0; }
+.reference-controls { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.reference-controls > label { color: var(--muted); font-size: 12px; }
+.money-input { height: 40px; display: flex; align-items: center; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--field-bg); transition: border-color .15s, box-shadow .15s; }
+.money-input:focus-within { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(114, 230, 188, .11); }
+.money-input span { color: var(--muted); font-weight: 700; }
+.money-input input { width: 112px; border: 0; outline: 0; color: var(--text); background: transparent; text-align: right; font: 650 14px/1 ui-monospace, "Cascadia Mono", monospace; }
+.money-input input::-webkit-inner-spin-button { appearance: none; }
+.reference-presets { display: flex; gap: 4px; }
+.reference-presets button { height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--field-bg); cursor: pointer; }
+.reference-presets button:hover, .reference-presets button.active { border-color: rgba(114, 230, 188, .45); color: var(--mint); background: rgba(114, 230, 188, .08); }
+.reference-result { grid-column: 2; margin: 0; color: var(--cyan); font-size: 12px; line-height: 1.55; text-align: right; }
 .signal-card { padding: 22px; position: relative; overflow: hidden; }
 .signal-card::after { content: ""; position: absolute; right: -65px; top: -65px; width: 150px; height: 150px; border-radius: 50%; opacity: .08; }
 .buy-card::after { background: var(--mint); }.sell-card::after { background: var(--coral); }
@@ -168,6 +183,9 @@ footer a { color: var(--mint); text-decoration: none; }
   .summary-grid { grid-template-columns: 1fr 1fr; }
   .price-card { grid-column: 1 / -1; }
   .chart { height: 310px; }
+  .reference-panel { grid-template-columns: 1fr; }
+  .reference-controls { justify-content: flex-start; }
+  .reference-result { grid-column: 1; text-align: left; }
 }
 @media (max-width: 640px) {
   .shell { width: min(100% - 22px, 1440px); padding-top: 24px; }
@@ -258,4 +276,7 @@ a:focus-visible, summary:focus-visible { outline: 2px solid var(--mint); outline
   .summary-grid { grid-template-columns: 1fr; }
   .legend { gap: 12px; font-size: 10px; }
   footer { line-height: 1.8; }
+  .reference-controls { align-items: stretch; flex-direction: column; }
+  .money-input input { width: 100%; }
+  .reference-presets button { flex: 1; }
 }

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 from datetime import datetime
 import json
+import math
 import os
 import sys
 import threading
@@ -312,7 +313,7 @@ class MarketDesktopApp:
         brand = tk.Frame(sidebar, bg=COLORS["panel"], padx=20, pady=24)
         brand.pack(fill="x")
         self._label(brand, "◈  市场航图", 16, weight="bold").pack(anchor="w")
-        self._label(brand, "MARKET COMPASS · v0.21", 8, COLORS["muted"]).pack(anchor="w", pady=(7, 0))
+        self._label(brand, "MARKET COMPASS · v0.21.1", 8, COLORS["muted"]).pack(anchor="w", pady=(7, 0))
         tk.Frame(sidebar, bg=COLORS["line"], height=1).pack(fill="x", padx=20)
 
         nav = tk.Frame(sidebar, bg=COLORS["panel"], padx=12, pady=18)
@@ -393,13 +394,43 @@ class MarketDesktopApp:
         summary_body.grid_columnconfigure(1, weight=1, uniform="signal")
         self.buy_widgets = self._signal_summary(summary_body, 0, "加仓", COLORS["mint"])
         self.sell_widgets = self._signal_summary(summary_body, 1, "减仓", COLORS["coral"])
-        reference_bar = tk.Frame(outer, bg=COLORS["bg"])
+        reference_bar = tk.Frame(
+            outer, bg=COLORS["panel"], highlightthickness=1,
+            highlightbackground=COLORS["line"], padx=14, pady=10,
+        )
         reference_bar.pack(fill="x", pady=(0, 10))
-        self._label(reference_bar, "收盘交易前权益（元）", 9).pack(side="left")
+        title_box = tk.Frame(reference_bar, bg=COLORS["panel"])
+        title_box.pack(side="left", padx=(0, 16))
+        self._label(title_box, "权益金额换算", 9, weight="bold").pack(anchor="w")
+        self._label(title_box, "当日收盘 · 交易前市值", 8, COLORS["muted"]).pack(anchor="w")
         self.reference_equity = tk.StringVar(value="10000")
-        ttk.Entry(reference_bar, textvariable=self.reference_equity, width=12).pack(side="left", padx=8)
+        input_shell = tk.Frame(
+            reference_bar, bg=COLORS["panel_alt"], highlightthickness=1,
+            highlightbackground=COLORS["line"], padx=10, pady=6,
+        )
+        input_shell.pack(side="left")
+        self._label(input_shell, "¥", 11, COLORS["muted"], "bold").pack(side="left", padx=(0, 5))
+        self.reference_entry = tk.Entry(
+            input_shell, textvariable=self.reference_equity, width=11, justify="right",
+            bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"],
+            selectbackground=COLORS["cyan"], selectforeground=COLORS["bg"],
+            relief="flat", borderwidth=0, font=("Cascadia Mono", 11, "bold"),
+        )
+        self.reference_entry.pack(side="left")
+        self.reference_entry.bind("<FocusIn>", lambda _event: input_shell.configure(highlightbackground=COLORS["cyan"]))
+        self.reference_entry.bind("<FocusOut>", lambda _event: self._finish_reference_edit(input_shell))
+        self.reference_entry.bind("<Return>", lambda _event: self._finish_reference_edit(input_shell))
+        presets = tk.Frame(reference_bar, bg=COLORS["panel"])
+        presets.pack(side="left", padx=8)
+        for text, amount in (("1万", 10000), ("5万", 50000), ("10万", 100000)):
+            tk.Button(
+                presets, text=text, command=lambda value=amount: self._set_reference_equity(value),
+                bg=COLORS["panel_alt"], fg=COLORS["muted"], activebackground=COLORS["button_hover"],
+                activeforeground=COLORS["text"], relief="flat", borderwidth=0, cursor="hand2",
+                padx=8, pady=4, font=("Microsoft YaHei UI", 8),
+            ).pack(side="left", padx=2)
         self.reference_text = self._label(reference_bar, "V1 参考加载中…", 9, COLORS["cyan"])
-        self.reference_text.pack(side="left")
+        self.reference_text.pack(side="right", padx=(12, 0))
         self.reference_equity.trace_add("write", lambda *_: self._update_reference())
 
         cards = tk.Frame(outer, bg=COLORS["bg"])
@@ -1570,13 +1601,12 @@ class MarketDesktopApp:
         self.update_button.configure(state="normal")
 
     def _update_reference(self) -> None:
-        import math
         ref = getattr(self, "current_reference", None)
         if not ref or ref["status"] != "ok":
             self.reference_text.configure(text="暂无V1金额参考（需有效日收益和MA250）")
             return
         try:
-            coefficient = float(self.reference_equity.get()) / 10000
+            coefficient = float(self.reference_equity.get().replace(",", "")) / 10000
             if not math.isfinite(coefficient) or coefficient < 0:
                 raise ValueError
         except ValueError:
@@ -1587,6 +1617,19 @@ class MarketDesktopApp:
             widgets["score"].configure(text=f"{ref[key]:.2f}元")
             widgets["level"].configure(text="每万元参考")
             widgets["reasons"].configure(text=f"{ref['date']} · 价格涨跌估算，未含分红\n收盘交易前持仓1万元；实际金额 × 系数")
+
+    def _set_reference_equity(self, value: float) -> None:
+        self.reference_equity.set(f"{value:,.0f}")
+        self.reference_entry.icursor("end")
+
+    def _finish_reference_edit(self, shell: tk.Frame) -> None:
+        shell.configure(highlightbackground=COLORS["line"])
+        try:
+            value = float(self.reference_equity.get().replace(",", ""))
+            if value >= 0 and math.isfinite(value):
+                self.reference_equity.set(f"{value:,.0f}" if value.is_integer() else f"{value:,.2f}")
+        except ValueError:
+            pass
 
     @staticmethod
     def _render_signal(widgets: dict[str, tk.Label], signal: dict[str, Any], suffix: str) -> None:
