@@ -1,11 +1,12 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0src;%PYTHONPATH%"
 
 if not exist ".venv\Scripts\pythonw.exe" (
   echo Preparing Market Navigator for first use...
   where py >nul 2>nul
-  if %errorlevel% equ 0 (
+  if not errorlevel 1 (
     py -3 -m venv .venv
   ) else (
     python -m venv .venv

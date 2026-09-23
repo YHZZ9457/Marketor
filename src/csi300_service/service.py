@@ -47,10 +47,17 @@ class MarketService:
 
     def history(self, start: str | None = None, end: str | None = None, limit: int = 5000) -> list[dict]:
         df = self.df
-        if start:
-            df = df[df["date"] >= pd.Timestamp(start)]
-        if end:
-            df = df[df["date"] <= pd.Timestamp(end)]
+        start_date = pd.Timestamp(start) if start else None
+        end_date = pd.Timestamp(end) if end else None
+        for value in (start_date, end_date):
+            if value is not None and (pd.isna(value) or value.tzinfo is not None or value != value.normalize()):
+                raise ValueError("日期必须是无时区的有效日期（YYYY-MM-DD）")
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise ValueError("起始日期不能晚于截止日期")
+        if start_date is not None:
+            df = df[df["date"] >= start_date]
+        if end_date is not None:
+            df = df[df["date"] <= end_date]
         df = df.tail(max(1, min(limit, 10000)))
         cols = [c for c in ["date", "open", "high", "low", "close", "amount", "daily_return", "return", "net_value"] if c in df.columns]
         return [self._row_to_dict(row[cols]) for _, row in df.iterrows()]

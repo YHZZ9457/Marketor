@@ -115,3 +115,49 @@ def test_ai_candidate_is_locally_clamped_and_validated():
     assert candidate["sell_bias_levels"] == [0.03, 0.15, 0.30, 0.50]
     assert candidate["rsi_oversold"] == 45
     assert candidate["rsi_extreme"] == 15
+
+
+def test_preview_preserves_existing_active_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "profile"))
+    optimizer = InstrumentStrategyOptimizer("demo", catalog=_catalog(tmp_path))
+    original = optimizer.optimize(apply=True)
+    preview = optimizer.optimize(apply=False, persist=False)
+    assert not preview.active
+    assert load_strategy_profile("demo") == original
+    applied = optimizer.apply_profile(preview)
+    assert applied.active
+    assert load_strategy_profile("demo") == applied
+
+
+def test_nonfinite_candidates_are_rejected():
+    import pytest
+    for value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="有限数值"):
+            InstrumentStrategyOptimizer._validate_candidate({
+                "buy_bias_levels": [-0.02, -0.08, -0.15, value],
+                "sell_bias_levels": [0.05, 0.1, 0.2, 0.3],
+                "rsi_oversold": 35, "rsi_extreme": 20,
+            })
+
+
+def test_provider_errors_do_not_expose_secrets():
+    import pytest
+    from urllib.error import HTTPError
+    def opener(request, timeout):
+        raise HTTPError(request.full_url, 401, "secret credential", {}, None)
+    client = OpenAICompatibleJSONClient(api_key="secret", opener=opener)
+    for call in (lambda: client.chat("system", [{"role": "user", "content": "hi"}]),
+                 lambda: client.complete_json("system", "{}")):
+        with pytest.raises(RuntimeError) as error:
+            call()
+        assert "无效或已过期" in str(error.value)
+        assert "secret" not in str(error.value)
+
+
+def test_json_client_rejects_non_object_response():
+    import pytest
+    response = io.BytesIO(json.dumps({"choices": [{"message": {"content": "[]"}}]}).encode())
+    client = OpenAICompatibleJSONClient(api_key="secret", opener=lambda *a, **k: response)
+    with pytest.raises(RuntimeError, match="响应格式"):
+        client.complete_json("system", "{}")
+    assert response.closed

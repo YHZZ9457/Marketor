@@ -13,18 +13,27 @@ from .events import EventBacktester
 from .service import MarketService
 from .statistics import statistics_methods
 
-app = FastAPI(title="Market Analysis Service", version="0.21.1")
+app = FastAPI(title="Market Analysis Service", version="0.22.0")
 catalog = InstrumentCatalog()
 web_dir = Path(__file__).resolve().parent / "web"
 app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
 
-@lru_cache(maxsize=64)
 def _service(symbol: str) -> MarketService:
     try:
-        return MarketService(symbol, catalog=catalog)
+        instrument = catalog.get(symbol)
+        stat = instrument.data_path.stat()
+        return _cached_service(instrument.symbol, catalog, stat.st_mtime_ns, stat.st_size)
     except (KeyError, FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@lru_cache(maxsize=64)
+def _cached_service(symbol: str, registry: InstrumentCatalog, modified: int, size: int) -> MarketService:
+    return MarketService(symbol, catalog=registry)
+
+
+_service.cache_clear = _cached_service.cache_clear
 
 
 @app.get("/")
@@ -68,8 +77,11 @@ def comparison():
 
 
 @app.get("/events")
-def events(symbol: str = "csi300", metric: str = "bias250", threshold: float = -0.10, direction: str = "below", cooldown: int = Query(60, ge=0, le=1250)):
-    return EventBacktester(_service(symbol)).run(metric, threshold, direction, cooldown)
+def events(symbol: str = "csi300", metric: str = "bias250", threshold: float = Query(-0.10, allow_inf_nan=False), direction: str = "below", cooldown: int = Query(60, ge=0, le=1250)):
+    try:
+        return EventBacktester(_service(symbol)).run(metric, threshold, direction, cooldown)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/latest")
@@ -84,7 +96,10 @@ def indicators(days: int = Query(30, ge=1, le=1000), symbol: str = "csi300"):
 
 @app.get("/history")
 def history(start: str | None = None, end: str | None = None, limit: int = Query(5000, ge=1, le=10000), symbol: str = "csi300"):
-    return _service(symbol).history(start, end, limit)
+    try:
+        return _service(symbol).history(start, end, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/signal")

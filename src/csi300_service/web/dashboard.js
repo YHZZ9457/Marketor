@@ -1,4 +1,4 @@
-const state = { symbol: "csi300", days: 250, instruments: [] };
+const state = { symbol: "csi300", days: 250, instruments: [], generation: 0 };
 let symbolDropdown = null;
 let methodDropdown = null;
 
@@ -186,23 +186,27 @@ function renderHeader(instrument, latest) {
     setDirection($(id), value);
   });
   $("rsi-14").textContent = formatNumber(latest.rsi14, 1);
-  $("rsi-marker").style.left = `${Math.max(0, Math.min(100, latest.rsi14 || 50))}%`;
+  $("rsi-marker").style.left = `${Math.max(0, Math.min(100, latest.rsi14 ?? 50))}%`;
 }
 
 function renderSignal(signal) {
+  state.strategyId = signal.strategy_id || "adaptive";
   state.reference = signal.daily_reference;
   renderReference();
+  const isV1 = signal.strategy_id === "ma_dynamic_v1";
+  $("buy-card").querySelector("h2").textContent = isV1 ? "V1 加仓条件" : "个性化加仓倍数";
+  $("sell-card").querySelector("h2").textContent = isV1 ? "V1 减仓条件" : "个性化减仓参考";
+  document.querySelectorAll(".signal-title .kicker").forEach(item => { item.textContent = isV1 ? "MA DYNAMIC V1" : "ADAPTIVE STRATEGY"; });
   const sides = [
-    { key: "accumulation", level: "buy-level", score: "buy-score", action: "buy-action", reasons: "buy-reasons", suffix: "%" },
+    { key: "accumulation", level: "buy-level", score: "buy-score", action: "buy-action", reasons: "buy-reasons", suffix: signal.strategy_id === "ma_dynamic_v1" ? "%" : "×" },
     { key: "reduction", level: "sell-level", score: "sell-score", action: "sell-action", reasons: "sell-reasons", suffix: "%" },
   ];
   sides.forEach(({ key, level, score, action, reasons, suffix }) => {
     const item = signal[key];
-    $(level).textContent = `${item.level}信号`;
-    const ref = signal.daily_reference;
-    $(score).textContent = ref?.status === "ok"
-      ? `${formatNumber(ref[key === "accumulation" ? "baseline_buy" : "baseline_sell"])} 元/万元`
-      : `${Number(item.score).toFixed(0)}${suffix}`;
+    $(score).textContent = `${Number(item.score).toFixed(suffix === "×" ? 1 : 0)}${suffix}`;
+    $(level).textContent = signal.strategy_id === "ma_dynamic_v1"
+      ? `${item.level} · 当日${key === "accumulation" ? "亏损" : "盈利"}比例`
+      : `${item.level}信号`;
     $(action).textContent = item.suggested_action;
     const list = $(reasons);
     list.replaceChildren(...item.reasons.map((reason) => {
@@ -221,7 +225,7 @@ function renderReference() {
     return;
   }
   if (!ref || ref.status !== "ok") {
-    $("reference-result").textContent = "暂无V1金额参考：需有效日收益和MA250数据";
+    $("reference-result").textContent = state.strategyId === "adaptive" ? "当前为个性化倍数策略，不使用 V1 金额换算" : "暂无V1金额参考：需有效日收益和MA250数据";
     return;
   }
   const coefficient = equity / 10000;
@@ -282,22 +286,52 @@ function renderChart(rows) {
 function renderReturns(rows) {
   const labels = { 1: "1天", 7: "1周", 30: "1月", 365: "1年", 730: "2年", 1095: "3年", 1825: "5年" };
   const body = $("returns-body"); body.replaceChildren();
+  const distribution = methodDropdown.value === "distribution";
+  $("returns-head").replaceChildren();
+  const header = document.createElement("tr");
+  ["持有期", "样本数", "平均收益", "中位数", "正收益率", "最差", "最好", ...(distribution ? ["P10", "P25", "P75", "P90", "标准差"] : [])].forEach(label => {
+    const th = document.createElement("th"); th.textContent = label; header.append(th);
+  });
+  $("returns-head").append(header);
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     const values = [labels[row.days] || `${row.days}天`, row.samples.toLocaleString("zh-CN"), formatPct(row.mean), formatPct(row.median), formatPct(row.positive_rate), formatPct(row.min), formatPct(row.max)];
     values.forEach((value, index) => { const td = document.createElement("td"); td.textContent = value; if (index >= 2 && index !== 4) setDirection(td, row[[null, null, "mean", "median", "positive_rate", "min", "max"][index]]); tr.append(td); });
+    if (distribution) ["p10", "p25", "p75", "p90", "std"].forEach(key => {
+      const td = document.createElement("td"); td.textContent = formatPct(row[key]); tr.append(td);
+    });
     body.append(tr);
   });
 }
 
+function clearDashboard() {
+  state.strategyId = null;
+  state.reference = null;
+  renderReference();
+  ["latest-price", "data-date", "data-range", "row-count", "ret-20d", "bias-250", "bias-500", "bias-1250", "drawdown-250", "rsi-14", "buy-level", "sell-level", "buy-score", "sell-score", "buy-action", "sell-action"].forEach(id => { $(id).textContent = "—"; setDirection($(id), null); });
+  $("rsi-marker").style.left = "50%";
+  ["buy-reasons", "sell-reasons", "returns-body"].forEach(id => $(id).replaceChildren());
+  renderChart([]);
+}
+
 async function loadDashboard() {
+  const generation = ++state.generation;
+  clearDashboard();
+  const instrument = state.instruments.find(item => item.symbol === state.symbol);
+  $("instrument-name").textContent = instrument?.name || state.symbol;
+  $("instrument-kind").textContent = instrument ? `${instrument.asset_class.toUpperCase()} · ${instrument.currency}` : "—";
   showStatus("正在读取本地行情…", "loading");
   const symbol = encodeURIComponent(state.symbol);
   const method = encodeURIComponent(methodDropdown.value);
   $("ma-dynamic-status").textContent = "正在读取策略…";
   $("ma-dynamic-summary").textContent = "";
+  if (instrument?.data_available === false) {
+    $("ma-dynamic-status").textContent = "尚无本地行情，无法回测";
+    showStatus("该标的尚无本地 CSV，请先通过命令行 bootstrap 拉取行情，再刷新页面。", "error");
+    return;
+  }
   fetchJson(`/strategies/ma-dynamic-v1?symbol=${symbol}`).then((result) => {
-    if (symbol !== encodeURIComponent(state.symbol)) return;
+    if (generation !== state.generation) return;
     $("ma-dynamic-status").textContent = result.status === "ok"
       ? `回测 ${result.start} — ${result.end} · 全收益指数 ${result.total_return_code}`
       : result.message;
@@ -306,7 +340,7 @@ async function loadDashboard() {
       $("ma-dynamic-summary").textContent = `持仓 ${formatNumber(s.holding_value)}元 · 现金池 ${formatNumber(s.cash)}元 · 累计外部投入 ${formatNumber(s.external_total)}元 · 总盈亏 ${formatNumber(s.profit)}元 · 交易 ${s.trade_count}次`;
     }
   }).catch((error) => {
-    if (symbol === encodeURIComponent(state.symbol)) $("ma-dynamic-status").textContent = `无法回测：${error.message}`;
+    if (generation === state.generation) $("ma-dynamic-status").textContent = `无法回测：${error.message}`;
   });
   try {
     const [latest, signal, indicators, returns] = await Promise.all([
@@ -314,15 +348,19 @@ async function loadDashboard() {
       fetchJson(`/indicators?symbol=${symbol}&days=${state.days}`),
       fetchJson(`/holding-returns?symbol=${symbol}&method=${method}`),
     ]);
-    const instrument = state.instruments.find((item) => item.symbol === state.symbol);
+    if (generation !== state.generation) return;
     renderHeader(instrument, latest); renderSignal(signal); renderChart(indicators); renderReturns(returns);
     showStatus(`已更新 · ${instrument?.name || state.symbol} · 数据截至 ${latest.date}`, "success");
-  } catch (error) { showStatus(`无法加载数据：${error.message}`, "error"); }
+  } catch (error) { if (generation === state.generation) showStatus(`无法加载数据：${error.message}`, "error"); }
 }
 
 async function boot() {
   try {
     state.instruments = await fetchJson("/instruments");
+    if (!state.instruments.some(item => item.symbol === state.symbol)) {
+      state.symbol = (state.instruments.find(item => item.data_available !== false) || state.instruments[0])?.symbol;
+    }
+    if (!state.symbol) throw new Error("未配置可选标的");
     symbolDropdown = createDropdown({
       options: state.instruments.map((item) => ({
         value: item.symbol,
@@ -340,7 +378,16 @@ async function boot() {
       ariaLabel: "选择统计方法",
     });
     $("method-select").appendChild(methodDropdown.host);
-    $("reload-button").addEventListener("click", loadDashboard);
+    $("reload-button").addEventListener("click", async () => {
+      try {
+        state.instruments = await fetchJson("/instruments");
+        symbolDropdown.setOptions(state.instruments.map(item => ({
+          value: item.symbol,
+          label: item.data_available === false ? `${item.name} · ${item.symbol}（待拉取）` : `${item.name} · ${item.symbol}`,
+        })));
+        await loadDashboard();
+      } catch (error) { showStatus(`无法刷新目录：${error.message}`, "error"); }
+    });
     document.querySelectorAll("[data-days]").forEach((button) => button.addEventListener("click", () => {
       state.days = Number(button.dataset.days);
       document.querySelectorAll("[data-days]").forEach((item) => item.classList.toggle("active", item === button));

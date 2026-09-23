@@ -12,19 +12,21 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
+from . import __version__
 from .catalog import InstrumentCatalog
 from .comparison import MarketComparisonService
 from .custom_instruments import CustomInstrumentManager, normalize_symbol
 from .events import EventBacktester
 from .online_custom import ONLINE_TYPE_LABELS, OnlineCustomInstrumentManager, OnlineImportResult
 from .service import MarketService
+from .ui_tasks import UIQueue
+from .ma_dynamic import RULES
 from .updater import MarketDataUpdater, UpdateResult
 from .data_sources import HITHINK_API_KEY_ENV, hithink_api_key
 from .ai_strategy import (
     DEEPSEEK_API_KEY_ENV, InstrumentStrategyOptimizer, OpenAICompatibleJSONClient,
     load_strategy_profile, set_strategy_profile_active,
 )
-from .ai_chat import analysis_system_prompt, build_analysis_context, free_chat_system_prompt
 
 
 THEMES = {
@@ -252,6 +254,10 @@ class LineChart(tk.Canvas):
 class MarketDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
+        self._ui_queue = UIQueue(root)
+        self._post_ui = self._ui_queue.post
+        self._load_generation = 0
+        self._updating = False
         self.theme_name = load_theme()
         COLORS.clear()
         COLORS.update(THEMES[self.theme_name])
@@ -273,7 +279,7 @@ class MarketDesktopApp:
         self.root.tk.call("tk", "scaling", dpi / 72.0)
 
     def _configure_window(self) -> None:
-        self.root.title("市场航图 · 本地行情分析")
+        self.root.title(f"市场航图 · {__version__} · 本地行情分析")
         icon_path = _app_icon_path()
         if icon_path.exists():
             self.root.iconbitmap(default=str(icon_path))
@@ -387,7 +393,7 @@ class MarketDesktopApp:
         summary_title = tk.Frame(summary, bg=COLORS["panel"])
         summary_title.pack(fill="x", pady=(0, 10))
         self._label(summary_title, "当前辅助信号", 12, weight="bold").pack(side="left")
-        self._label(summary_title, "仅供决策参考，不构成投资建议", 8, COLORS["muted"]).pack(side="right")
+        self._button(summary_title, "档位说明", self.open_strategy_rules).pack(side="right")
         summary_body = tk.Frame(summary, bg=COLORS["panel"])
         summary_body.pack(fill="x")
         summary_body.grid_columnconfigure(0, weight=1, uniform="signal")
@@ -399,13 +405,15 @@ class MarketDesktopApp:
             highlightbackground=COLORS["line"], padx=14, pady=10,
         )
         reference_bar.pack(fill="x", pady=(0, 10))
-        title_box = tk.Frame(reference_bar, bg=COLORS["panel"])
+        reference_controls = tk.Frame(reference_bar, bg=COLORS["panel"])
+        reference_controls.pack(fill="x")
+        title_box = tk.Frame(reference_controls, bg=COLORS["panel"])
         title_box.pack(side="left", padx=(0, 16))
         self._label(title_box, "权益金额换算", 9, weight="bold").pack(anchor="w")
         self._label(title_box, "当日收盘 · 交易前市值", 8, COLORS["muted"]).pack(anchor="w")
         self.reference_equity = tk.StringVar(value="10000")
         input_shell = tk.Frame(
-            reference_bar, bg=COLORS["panel_alt"], highlightthickness=1,
+            reference_controls, bg=COLORS["panel_alt"], highlightthickness=1,
             highlightbackground=COLORS["line"], padx=10, pady=6,
         )
         input_shell.pack(side="left")
@@ -420,7 +428,7 @@ class MarketDesktopApp:
         self.reference_entry.bind("<FocusIn>", lambda _event: input_shell.configure(highlightbackground=COLORS["cyan"]))
         self.reference_entry.bind("<FocusOut>", lambda _event: self._finish_reference_edit(input_shell))
         self.reference_entry.bind("<Return>", lambda _event: self._finish_reference_edit(input_shell))
-        presets = tk.Frame(reference_bar, bg=COLORS["panel"])
+        presets = tk.Frame(reference_controls, bg=COLORS["panel"])
         presets.pack(side="left", padx=8)
         for text, amount in (("1万", 10000), ("5万", 50000), ("10万", 100000)):
             tk.Button(
@@ -430,7 +438,7 @@ class MarketDesktopApp:
                 padx=8, pady=4, font=("Microsoft YaHei UI", 8),
             ).pack(side="left", padx=2)
         self.reference_text = self._label(reference_bar, "V1 参考加载中…", 9, COLORS["cyan"])
-        self.reference_text.pack(side="right", padx=(12, 0))
+        self.reference_text.pack(anchor="w", pady=(8, 0))
         self.reference_equity.trace_add("write", lambda *_: self._update_reference())
 
         cards = tk.Frame(outer, bg=COLORS["bg"])
@@ -585,10 +593,11 @@ class MarketDesktopApp:
         value_row.pack(fill="x", pady=(7, 2))
         score = self._label(value_row, "—", 21, accent, "bold")
         score.pack(side="left")
-        action = self._label(value_row, "—", 9, COLORS["text"], wraplength=370, justify="left")
-        action.pack(side="left", padx=(14, 0), fill="x", expand=True)
+        action = self._label(content, "—", 9, COLORS["text"], wraplength=300, justify="left")
+        action.pack(anchor="w", fill="x", pady=(5, 6))
         reasons = self._label(content, "—", 8, COLORS["muted"], wraplength=500, justify="left")
         reasons.pack(anchor="w", fill="x")
+        content.bind("<Configure>", lambda event: [label.configure(wraplength=max(80, event.width - 32)) for label in (action, reasons)])
         return {"level": level, "score": score, "action": action, "reasons": reasons}
 
     def _selector_control(
@@ -688,6 +697,7 @@ class MarketDesktopApp:
 
     def _on_symbol_change(self, _event: Any) -> None:
         self.current_symbol = self.symbol_choices[self.symbol_var.get()]
+        self.provider_status = "当前数据源：本地 CSV · 在线状态：待检查"
         self.refresh()
 
     def _build_symbol_choices(self) -> dict[str, str]:
@@ -907,40 +917,66 @@ class MarketDesktopApp:
             if not base_url_var.get().strip() or not model_var.get().strip():
                 messagebox.showwarning("配置不完整", "Base URL 和模型名称不能为空。", parent=window)
                 return
-            save_user_api_key(env_name, key)
+            if key_var.get().strip():
+                try:
+                    save_user_api_key(env_name, key)
+                except OSError as exc:
+                    messagebox.showerror("API Key 保存失败", str(exc), parent=window)
+                    return
             key_var.set("")
             optimize_button.configure(state="disabled")
             status_var.set("正在请求 AI 候选，并执行本地样本外回测…")
             client = OpenAICompatibleJSONClient(api_key=key, base_url=base_url_var.get(), model=model_var.get())
 
+            provider_name = provider_var.get()
+
             def worker() -> None:
                 try:
                     profile = InstrumentStrategyOptimizer(instrument.symbol, catalog=self.catalog).optimize(
-                        client=client, provider_name=provider_var.get(), apply=True,
+                        client=client, provider_name=provider_name, apply=False, persist=False,
                     )
-                    self.root.after(0, finish, profile)
+                    self._post_ui(finish, profile)
                 except Exception as exc:
-                    self.root.after(0, failed, str(exc))
+                    self._post_ui(failed, str(exc))
 
             threading.Thread(target=worker, daemon=True).start()
 
         def finish(profile: Any) -> None:
-            window.destroy()
+            if not window.winfo_exists():
+                return
+            optimize_button.configure(state="normal")
             metrics = profile.validation
-            self.refresh()
-            messagebox.showinfo(
-                "AI 策略已验证并应用",
+            summary = (
                 f"标的：{profile.name}\n来源：{profile.source} · {profile.model}\n"
-                f"样本外 CAGR：{metrics.get('cagr', 0):+.2%}\n"
+                f"验证天数：{metrics.get('validation_days', 0)}\n"
+                f"验证区间 CAGR：{metrics.get('cagr', 0):+.2%}\n"
                 f"最大回撤：{metrics.get('max_drawdown', 0):+.2%}\n"
                 f"Sharpe：{metrics.get('sharpe', 0):.2f}\n\n"
                 f"加仓阈值：{', '.join(f'{x:+.1%}' for x in profile.buy_bias_levels)}\n"
-                f"减仓阈值：{', '.join(f'{x:+.1%}' for x in profile.sell_bias_levels)}\n\n"
-                "该结果仅为历史研究与辅助决策，不保证未来收益。",
-                parent=self.root,
+                f"减仓阈值：{', '.join(f'{x:+.1%}' for x in profile.sell_bias_levels)}\n"
+                f"RSI 超卖 / 极端：{profile.rsi_oversold:.1f} / {profile.rsi_extreme:.1f}\n\n"
+                f"理由：{profile.rationale}\n\n"
+                "以上为候选仓位模型的历史筛选结果，不等同于实际加减仓规则收益，"
+                "且验证区间参与了候选选择，不保证未来表现。\n"
             )
+            if instrument.asset_class == "index":
+                messagebox.showinfo("策略研究预览", summary + "指数当前统一使用 V1 规则，此结果仅供研究，不覆盖指数信号。", parent=window)
+                status_var.set("预览完成，指数 V1 策略保持不变。")
+                return
+            if not messagebox.askyesno("策略预览 · 是否应用？", summary + "应用这些阈值到当前标的？", parent=window):
+                status_var.set("已保留原策略，可重新生成预览。")
+                return
+            try:
+                InstrumentStrategyOptimizer.apply_profile(profile)
+            except Exception as exc:
+                failed(str(exc))
+                return
+            window.destroy()
+            self.refresh()
 
         def failed(message: str) -> None:
+            if not window.winfo_exists():
+                return
             optimize_button.configure(state="normal")
             status_var.set(f"优化失败：{message}")
 
@@ -957,236 +993,20 @@ class MarketDesktopApp:
         tk.Button(actions, text="取消", command=window.destroy, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=16, pady=7).pack(side="left", padx=(0, 8))
         restore_button = tk.Button(actions, text="恢复全局策略", command=restore_default, state="normal" if current and current.active else "disabled", bg=COLORS["button"], fg=COLORS["coral"], relief="flat", padx=16, pady=7)
         restore_button.pack(side="left", padx=(0, 8))
-        optimize_button = tk.Button(actions, text="AI 优化并应用", command=submit, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold"))
+        optimize_button = tk.Button(actions, text="生成策略预览", command=submit, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=7, font=("Microsoft YaHei UI", 9, "bold"))
         optimize_button.pack(side="left")
         panel.grid_columnconfigure(1, weight=1)
         key_entry.focus_set()
 
     def open_ai_chat(self) -> None:
-        instrument = self.catalog.get(self.current_symbol)
-        context: dict[str, Any] | None = None
-        context_error = ""
-        try:
-            context = build_analysis_context(instrument.symbol, catalog=self.catalog)
-        except Exception as exc:
-            context_error = str(exc)
-
-        window = tk.Toplevel(self.root)
-        window.title("AI 自由聊天 · Marketor")
-        screen_w, screen_h = window.winfo_screenwidth(), window.winfo_screenheight()
-        width, height = min(940, int(screen_w * 0.88)), min(720, int(screen_h * 0.86))
-        window.geometry(f"{width}x{height}")
-        window.minsize(720, 560)
-        window.transient(self.root)
-        window.configure(bg=COLORS["bg"])
-
-        outer = tk.Frame(window, bg=COLORS["bg"], padx=18, pady=16)
-        outer.pack(fill="both", expand=True)
-        header = self._panel(outer)
-        header.pack(fill="x", pady=(0, 10))
-        title_row = tk.Frame(header, bg=COLORS["panel"])
-        title_row.pack(fill="x")
-        self._label(title_row, "AI 自由聊天", 16, weight="bold").pack(side="left")
-        cutoff = context["context_policy"]["data_cutoff"] if context is not None else "不可用"
-        self._label(title_row, "自由对话 · 可选行情上下文", 8, COLORS["cyan"], "bold").pack(side="right")
-        self._label(header, "普通聊天不会读取行情；需要分析时可手动带入当前标的摘要", 8, COLORS["muted"]).pack(anchor="w", pady=(4, 10))
-
-        config = tk.Frame(header, bg=COLORS["panel"])
-        config.pack(fill="x")
-        provider_var = tk.StringVar(value="DeepSeek")
-        key_var = tk.StringVar()
-        base_url_var = tk.StringVar(value="https://api.deepseek.com")
-        model_var = tk.StringVar(value="deepseek-v4-flash")
-
-        def config_field(label: str, variable: tk.StringVar, width_chars: int, *, secret: bool = False) -> tk.Entry:
-            group = tk.Frame(config, bg=COLORS["panel"])
-            group.pack(side="left", fill="x", expand=label in {"API Key", "Base URL"}, padx=(0, 9))
-            self._label(group, label, 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
-            entry = tk.Entry(group, textvariable=variable, show="●" if secret else "", width=width_chars, bg=COLORS["panel_alt"], fg=COLORS["text"], insertbackground=COLORS["text"], relief="flat", font=("Segoe UI", 9))
-            entry.pack(fill="x", ipady=6)
-            return entry
-
-        provider_group = tk.Frame(config, bg=COLORS["panel"])
-        provider_group.pack(side="left", padx=(0, 9))
-        self._label(provider_group, "AI 服务", 8, COLORS["muted"], "bold").pack(anchor="w", pady=(0, 3))
-        provider_box = ttk.Combobox(provider_group, textvariable=provider_var, values=["DeepSeek", "OpenAI 兼容接口"], state="readonly", width=16, style="Toolbar.TCombobox")
-        provider_box.pack(ipady=2)
-        key_entry = config_field("API Key", key_var, 18, secret=True)
-        config_field("Base URL", base_url_var, 24)
-        config_field("模型", model_var, 18)
-
-        def provider_changed(_event: Any = None) -> None:
-            if provider_var.get() == "DeepSeek":
-                base_url_var.set("https://api.deepseek.com")
-                model_var.set("deepseek-v4-flash")
-            else:
-                base_url_var.set("https://api.openai.com/v1")
-                model_var.set("")
-
-        provider_box.bind("<<ComboboxSelected>>", provider_changed)
-
-        mode_bar = tk.Frame(header, bg=COLORS["panel"])
-        mode_bar.pack(fill="x", pady=(11, 0))
-        include_market_var = tk.BooleanVar(value=False)
-        market_toggle = tk.Checkbutton(
-            mode_bar, text=f"带入当前行情：{instrument.name}", variable=include_market_var,
-            bg=COLORS["panel"], fg=COLORS["text"], activebackground=COLORS["panel"],
-            activeforeground=COLORS["text"], selectcolor=COLORS["panel_alt"],
-            font=("Microsoft YaHei UI", 9), cursor="hand2",
-        )
-        market_toggle.pack(side="left")
-        mode_hint = self._label(mode_bar, "普通自由聊天模式", 8, COLORS["mint"], "bold")
-        mode_hint.pack(side="right")
-        if context is None:
-            market_toggle.configure(state="disabled")
-            mode_hint.configure(text=f"行情上下文不可用：{context_error}", fg=COLORS["coral"])
-
-        transcript_panel = tk.Frame(outer, bg=COLORS["panel"], highlightbackground=COLORS["line"], highlightthickness=1)
-        transcript_panel.pack(fill="both", expand=True, pady=(0, 10))
-        scrollbar = ttk.Scrollbar(transcript_panel, orient="vertical", style="Dropdown.Vertical.TScrollbar")
-        transcript = tk.Text(
-            transcript_panel, wrap="word", state="disabled", undo=False,
-            bg=COLORS["panel"], fg=COLORS["text"], insertbackground=COLORS["text"],
-            selectbackground=COLORS["selected"], relief="flat", padx=16, pady=14,
-            font=("Microsoft YaHei UI", 10), spacing1=3, spacing3=7,
-            yscrollcommand=scrollbar.set,
-        )
-        scrollbar.configure(command=transcript.yview)
-        scrollbar.pack(side="right", fill="y")
-        transcript.pack(side="left", fill="both", expand=True)
-        transcript.tag_configure("user_head", foreground=COLORS["mint"], font=("Microsoft YaHei UI", 9, "bold"))
-        transcript.tag_configure("assistant_head", foreground=COLORS["cyan"], font=("Microsoft YaHei UI", 9, "bold"))
-        transcript.tag_configure("system", foreground=COLORS["muted"], font=("Microsoft YaHei UI", 9))
-
-        history: list[dict[str, str]] = []
-        request_pending = False
-
-        def append_message(role: str, content: str) -> None:
-            if not window.winfo_exists():
-                return
-            labels = {"user": ("你", "user_head"), "assistant": ("Marketor AI", "assistant_head"), "system": ("系统", "system")}
-            label, tag = labels[role]
-            transcript.configure(state="normal")
-            transcript.insert("end", f"{label}\n", tag)
-            if role == "system":
-                transcript.insert("end", f"{content.strip()}\n\n", "system")
-            else:
-                transcript.insert("end", f"{content.strip()}\n\n")
-            transcript.configure(state="disabled")
-            transcript.see("end")
-
-        def chat_mode_message() -> str:
-            if include_market_var.get() and context is not None:
-                return f"行情分析模式：已带入 {instrument.name} 的本地摘要，数据截止 {cutoff}。"
-            return "普通自由聊天模式：不会读取或发送本地行情数据，你可以聊任何话题。"
-
-        append_message("system", chat_mode_message())
-
-        input_panel = self._panel(outer)
-        input_panel.pack(fill="x")
-        input_box = tk.Text(
-            input_panel, height=4, wrap="word", bg=COLORS["panel_alt"], fg=COLORS["text"],
-            insertbackground=COLORS["text"], selectbackground=COLORS["selected"], relief="flat",
-            padx=10, pady=8, font=("Microsoft YaHei UI", 10),
-        )
-        input_box.pack(side="left", fill="both", expand=True, padx=(0, 10))
-        controls = tk.Frame(input_panel, bg=COLORS["panel"])
-        controls.pack(side="right", fill="y")
-        status_var = tk.StringVar(value="Ctrl+Enter 发送")
-        self._label(controls, "", 8, COLORS["muted"], textvariable=status_var, wraplength=150, justify="center").pack(pady=(0, 7))
-
-        def reset_chat() -> None:
-            if request_pending:
-                return
-            history.clear()
-            transcript.configure(state="normal")
-            transcript.delete("1.0", "end")
-            transcript.configure(state="disabled")
-            mode_hint.configure(
-                text=f"行情分析 · 截止 {cutoff}" if include_market_var.get() else "普通自由聊天模式",
-                fg=COLORS["gold"] if include_market_var.get() else COLORS["mint"],
-            )
-            append_message("system", chat_mode_message())
-
-        market_toggle.configure(command=reset_chat)
-
-        def send() -> None:
-            nonlocal request_pending
-            if request_pending:
-                return
-            question = input_box.get("1.0", "end").strip()
-            if not question:
-                return
-            if len(question) > 4000:
-                messagebox.showwarning("问题过长", "单次问题请控制在 4000 字以内。", parent=window)
-                return
-            env_name = DEEPSEEK_API_KEY_ENV if provider_var.get() == "DeepSeek" else "MARKETOR_AI_API_KEY"
-            key = key_var.get().strip() or os.getenv(env_name, "").strip()
-            if not key:
-                messagebox.showwarning("需要 API Key", "请在上方粘贴当前 AI 服务的 API Key。", parent=window)
-                key_entry.focus_set()
-                return
-            if not base_url_var.get().strip() or not model_var.get().strip():
-                messagebox.showwarning("配置不完整", "Base URL 和模型名称不能为空。", parent=window)
-                return
-            save_user_api_key(env_name, key)
-            key_var.set("")
-            input_box.delete("1.0", "end")
-            append_message("user", question)
-            history.append({"role": "user", "content": question})
-            request_pending = True
-            send_button.configure(state="disabled")
-            clear_button.configure(state="disabled")
-            status_var.set("AI 正在回复…")
-            client = OpenAICompatibleJSONClient(api_key=key, base_url=base_url_var.get(), model=model_var.get())
-            messages = history[-12:].copy()
-            system_prompt = analysis_system_prompt(context) if include_market_var.get() and context is not None else free_chat_system_prompt()
-            market_toggle.configure(state="disabled")
-
-            def worker() -> None:
-                try:
-                    answer = client.chat(system_prompt, messages)
-                    self.root.after(0, finish, answer)
-                except Exception as exc:
-                    self.root.after(0, failed, str(exc))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def finish(answer: str) -> None:
-            nonlocal request_pending
-            if not window.winfo_exists():
-                return
-            request_pending = False
-            history.append({"role": "assistant", "content": answer})
-            append_message("assistant", answer)
-            send_button.configure(state="normal")
-            clear_button.configure(state="normal")
-            market_toggle.configure(state="normal" if context is not None else "disabled")
-            status_var.set("Ctrl+Enter 发送")
-            input_box.focus_set()
-
-        def failed(message: str) -> None:
-            nonlocal request_pending
-            if not window.winfo_exists():
-                return
-            request_pending = False
-            append_message("system", f"本次对话失败：{message}")
-            send_button.configure(state="normal")
-            clear_button.configure(state="normal")
-            market_toggle.configure(state="normal" if context is not None else "disabled")
-            status_var.set("调用失败，可检查配置后重试")
-
-        def send_shortcut(_event: Any) -> str:
-            send()
-            return "break"
-
-        input_box.bind("<Control-Return>", send_shortcut)
-        send_button = tk.Button(controls, text="发送", command=send, bg=COLORS["mint"], fg=COLORS["bg"], relief="flat", padx=18, pady=8, font=("Microsoft YaHei UI", 9, "bold"))
-        send_button.pack(fill="x")
-        clear_button = tk.Button(controls, text="清空会话", command=reset_chat, bg=COLORS["button"], fg=COLORS["text"], relief="flat", padx=14, pady=7)
-        clear_button.pack(fill="x", pady=(7, 0))
-        tk.Button(controls, text="关闭", command=window.destroy, bg=COLORS["button"], fg=COLORS["muted"], relief="flat", padx=14, pady=7).pack(fill="x", pady=(7, 0))
-        input_box.focus_set()
+        from .chat_window import ChatWindow
+        chat = getattr(self, "chat_workspace", None)
+        if chat is not None and not chat.closed and chat.window.winfo_exists():
+            chat.window.deiconify()
+            chat.window.lift()
+            chat.input.focus_set()
+            return
+        self.chat_workspace = ChatWindow(self, COLORS)
 
     def add_online_instrument(self) -> None:
         window = tk.Toplevel(self.root)
@@ -1283,9 +1103,9 @@ class MarketDesktopApp:
                         symbol=local_symbol, start_date=start_date,
                         name=display_name, replace=replace,
                     )
-                    self.root.after(0, self._finish_online_add, window, result)
+                    self._post_ui(self._finish_online_add, window, result)
                 except Exception as exc:
-                    self.root.after(0, self._online_add_failed, submit_button, status_var, str(exc))
+                    self._post_ui(self._online_add_failed, submit_button, status_var, str(exc), owner=window)
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -1296,7 +1116,8 @@ class MarketDesktopApp:
         code_entry.focus_set()
 
     def _finish_online_add(self, window: tk.Toplevel, result: OnlineImportResult) -> None:
-        window.destroy()
+        if window.winfo_exists():
+            window.destroy()
         self._reload_catalog(result.instrument.symbol)
         self.provider_status = f"当前数据源：{result.provider} · 在线状态：正常 · 最新交易日：{result.last_date}"
         messagebox.showinfo(
@@ -1311,16 +1132,34 @@ class MarketDesktopApp:
         button.configure(state="normal")
         status_var.set(f"查询失败：{message}")
 
+    def _clear_dashboard(self) -> None:
+        for card in (self.price_card, self.bias_card, self.rsi_card, self.drawdown_card):
+            card["value"].configure(text="—")
+            card["detail"].configure(text="等待当前标的数据")
+        for widgets in (self.buy_widgets, self.sell_widgets):
+            for widget in widgets.values():
+                widget.configure(text="—")
+        self.current_reference = None
+        self.current_strategy_id = None
+        self._update_reference()
+        self.chart.set_rows([])
+        self.returns_table.delete(*self.returns_table.get_children())
+
     def refresh(self) -> None:
+        self._load_generation += 1
+        self._clear_dashboard()
         self.refresh_button.configure(state="disabled")
         self.status_var.set("正在读取本地行情…")
         symbol = self.current_symbol
         days = PERIODS[self.period_var.get()]
-        threading.Thread(target=self._load_data, args=(symbol, days), daemon=True).start()
+        threading.Thread(target=self._load_data, args=(symbol, days, self._load_generation), daemon=True).start()
 
     def update_online(self) -> None:
+        if self._updating:
+            return
         instrument = self.catalog.get(self.current_symbol)
         if instrument.online_source:
+            self._updating = True
             self.update_button.configure(state="disabled")
             self.refresh_button.configure(state="disabled")
             self.status_var.set("正在重新查询自定义标的完整历史…")
@@ -1331,6 +1170,7 @@ class MarketDesktopApp:
             return
         self.update_button.configure(state="disabled")
         self.refresh_button.configure(state="disabled")
+        self._updating = True
         self.status_var.set("正在检查在线增量行情…")
         source_mode = DATA_SOURCES[self.source_var.get()]
         threading.Thread(target=self._run_online_update, args=(self.current_symbol, source_mode), daemon=True).start()
@@ -1338,17 +1178,22 @@ class MarketDesktopApp:
     def _run_custom_online_update(self, symbol: str) -> None:
         try:
             result = self.online_custom_manager.refresh(symbol, catalog=self.catalog)
-            self.root.after(0, self._finish_custom_online_update, result)
+            self._post_ui(self._finish_custom_online_update, result)
         except Exception as exc:
-            self.root.after(0, self._custom_online_update_failed, str(exc))
+            self._post_ui(self._custom_online_update_failed, str(exc))
 
     def _finish_custom_online_update(self, result: OnlineImportResult) -> None:
+        self._updating = False
+        self.update_button.configure(state="normal")
+        if result.instrument.symbol != self.current_symbol:
+            return
         self.catalog = InstrumentCatalog()
         self.provider_status = f"当前数据源：{result.provider} · 在线状态：正常 · 最新交易日：{result.last_date}"
         self.status_var.set(f"联网更新完成 · 共 {result.rows:,} 条记录")
         self.refresh()
 
     def _custom_online_update_failed(self, message: str) -> None:
+        self._updating = False
         self.update_button.configure(state="normal")
         self.refresh_button.configure(state="normal")
         self.status_var.set("联网更新失败，继续使用原有本地数据")
@@ -1373,14 +1218,19 @@ class MarketDesktopApp:
         status.pack(anchor="e")
         self._label(info, "双击指数查看年线低位独立事件", 8, COLORS["cyan"]).pack(anchor="e", pady=(3, 0))
         columns = ("rank", "name", "bias250", "bias500", "rsi", "drawdown", "return1y", "volatility", "percentile", "buy", "sell", "state", "date", "v1")
-        tree = ttk.Treeview(window, columns=columns, show="headings")
+        table_frame = tk.Frame(window, bg=COLORS["bg"])
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 12))
+        tree = ttk.Treeview(table_frame, columns=columns, show="headings")
         headings = ("排名", "指数", "250日乖离", "500日乖离", "RSI14", "一年回撤", "一年收益", "60日波动", "250乖离分位", "加仓分", "减仓分", "综合状态")
         headings += ("行情日期", "V1元/万元 +加 −减")
         widths = (50, 110, 85, 85, 65, 85, 85, 85, 95, 65, 65, 100, 90, 140)
         for column, heading, width in zip(columns, headings, widths):
             tree.heading(column, text=heading)
             tree.column(column, width=width, anchor="center", stretch=True)
-        tree.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        vertical = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        vertical.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=vertical.set)
+        tree.pack(side="left", fill="both", expand=True)
         tree.bind("<Double-1>", lambda _event: self._open_selected_events(tree))
         scroll = ttk.Scrollbar(window, orient="horizontal", command=tree.xview)
         scroll.pack(fill="x", padx=20)
@@ -1389,9 +1239,9 @@ class MarketDesktopApp:
         def load() -> None:
             try:
                 rows = MarketComparisonService(self.catalog).snapshots()
-                self.root.after(0, self._render_comparison, tree, status, rows)
+                self._post_ui(self._render_comparison, tree, status, rows, owner=window)
             except Exception as exc:
-                self.root.after(0, status.configure, {"text": f"计算失败：{exc}", "fg": COLORS["coral"]})
+                self._post_ui(status.configure, {"text": f"计算失败：{exc}", "fg": COLORS["coral"]}, owner=window)
 
         threading.Thread(target=load, daemon=True).start()
 
@@ -1427,19 +1277,24 @@ class MarketDesktopApp:
         summary = self._label(window, "触发后 60 个交易日内不重复计数", 9, COLORS["cyan"], padx=20, anchor="w")
         summary.pack(fill="x", pady=(0, 12))
         columns = ("date", "close", "bias", "rsi", "return1y", "return3y", "return5y")
-        tree = ttk.Treeview(window, columns=columns, show="headings")
+        table_frame = tk.Frame(window, bg=COLORS["bg"])
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 12))
+        tree = ttk.Treeview(table_frame, columns=columns, show="headings")
         headings = ("事件日期", "收盘点位", "250日乖离", "RSI14", "1年后收益", "3年后收益", "5年后收益")
         for column, heading in zip(columns, headings):
             tree.heading(column, text=heading)
             tree.column(column, anchor="center", width=120, stretch=True)
-        tree.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        vertical = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        vertical.pack(side="right", fill="y")
+        tree.configure(yscrollcommand=vertical.set)
+        tree.pack(side="left", fill="both", expand=True)
 
         def load() -> None:
             try:
                 result = EventBacktester(MarketService(symbol, catalog=self.catalog)).run()
-                self.root.after(0, self._render_event_history, tree, status, summary, result)
+                self._post_ui(self._render_event_history, tree, status, summary, result, owner=window)
             except Exception as exc:
-                self.root.after(0, status.configure, {"text": f"计算失败：{exc}", "fg": COLORS["coral"]})
+                self._post_ui(status.configure, {"text": f"计算失败：{exc}", "fg": COLORS["coral"]}, owner=window)
 
         threading.Thread(target=load, daemon=True).start()
 
@@ -1465,12 +1320,18 @@ class MarketDesktopApp:
         status.configure(text="事件模式 · 冷却 60 个交易日", fg=COLORS["mint"])
 
     def _run_online_update(self, symbol: str, source_mode: str) -> None:
-        result = MarketDataUpdater(symbol, catalog=self.catalog, source_mode=source_mode).run(allow_fallback=True)
-        self.root.after(0, self._finish_online_update, result)
+        try:
+            result = MarketDataUpdater(symbol, catalog=self.catalog, source_mode=source_mode).run(allow_fallback=True)
+            self._post_ui(self._finish_online_update, result)
+        except Exception as exc:
+            self._post_ui(self._custom_online_update_failed, str(exc))
 
     def _finish_online_update(self, result: UpdateResult) -> None:
+        self._updating = False
         self.update_button.configure(state="normal")
         self.refresh_button.configure(state="normal")
+        if result.symbol != self.current_symbol:
+            return
         self.provider_status = (
             f"当前数据源：{result.data_source} · 在线状态："
             f"{'正常' if result.online_status == 'normal' else '仅本地' if result.online_status == 'local' else '更新失败'}"
@@ -1487,6 +1348,39 @@ class MarketDesktopApp:
         else:
             self.status_var.set("在线数据已是最新")
         self.refresh()
+
+    def open_strategy_rules(self) -> None:
+        instrument = self.catalog.get(self.current_symbol)
+        profile = load_strategy_profile(instrument.symbol)
+        adaptive = instrument.asset_class != "index" and profile is not None and profile.active
+        window = tk.Toplevel(self.root)
+        window.title(f"{instrument.name} · 当前策略档位")
+        window.geometry("700x510")
+        window.configure(bg=COLORS["bg"])
+        panel = self._panel(window)
+        panel.pack(fill="both", expand=True, padx=16, pady=16)
+        self._label(panel, "个性化阈值" if adaptive else "MA 动态策略 V1", 16, weight="bold").pack(anchor="w")
+        tree = ttk.Treeview(panel, columns=("side", "condition", "result"), show="headings", height=8)
+        for key, label, width in (("side", "方向 / 档位", 100), ("condition", "触发条件", 260), ("result", "计算口径", 240)):
+            tree.heading(key, text=label)
+            tree.column(key, width=width, anchor="center")
+        tree.pack(fill="both", expand=True, pady=12)
+        if adaptive:
+            for side, levels, outputs, ma in (("加仓", profile.buy_bias_levels, (1.2, 1.5, 2.0, 2.5), 250), ("减仓", profile.sell_bias_levels, (10, 15, 25, 30), 500)):
+                for number, (threshold, amount) in enumerate(zip(levels, outputs), 1):
+                    condition = f"MA{ma}乖离 {'≤' if side == '加仓' else '≥'} {threshold:+.1%}"
+                    tree.insert("", "end", values=(f"{side} {number}档", condition, f"{amount:g}{'× 基础加仓额' if side == '加仓' else '% 累计减仓参考'}"))
+            note = (f"RSI < {profile.rsi_oversold:.1f}：加仓倍数 +0.5；RSI < {profile.rsi_extreme:.1f}：改为 +1.0。"
+                    "MA1250 与 RSI 回落还有确认加成；总加仓倍数上限3×，技术减仓上限40%。")
+        else:
+            for side, key, direction, pnl in (("加仓", "buy_tiers", "≤", "亏损"), ("减仓", "sell_tiers", "≥", "盈利")):
+                for number, (threshold, fraction) in enumerate(RULES[key], 1):
+                    tree.insert("", "end", values=(f"{side} {number}档", f"MA250乖离 {direction} {threshold:+.0%}", f"当日{pnl}金额 × {fraction:.0%}"))
+            note = ("仅取命中的最高档，不累加。100%指当日盈亏金额，不是全部持仓。当天盈亏方向不匹配时不触发。"
+                    f"首次建仓单独判断：价格 ≤ MA500 × {RULES['entry_ma500_multiple']:g}，首次金额 {RULES['initial_amount']:,.0f} 元。"
+                    "首页金额换算为已有持仓的价格收益估算，未含分红。")
+        self._label(panel, note, 10, COLORS["muted"], wraplength=620, justify="left").pack(fill="x", anchor="w")
+        self._button(panel, "关闭", window.destroy).pack(anchor="e", pady=(12, 0))
 
     def open_ma_dynamic(self) -> None:
         from tkinter.scrolledtext import ScrolledText
@@ -1555,7 +1449,7 @@ class MarketDesktopApp:
                     text = "\n".join(lines)
                 except Exception as exc:
                     text = f"无法回测：{exc}"
-                self.root.after(0, display, text)
+                self._post_ui(display, text)
 
             threading.Thread(target=work, daemon=True).start()
 
@@ -1563,7 +1457,7 @@ class MarketDesktopApp:
         run_button.pack(side="left", padx=6)
         run()
 
-    def _load_data(self, symbol: str, days: int) -> None:
+    def _load_data(self, symbol: str, days: int, generation: int) -> None:
         try:
             service = MarketService(symbol, catalog=self.catalog)
             payload = {
@@ -1573,9 +1467,17 @@ class MarketDesktopApp:
                 "indicators": service.indicators(days),
                 "returns": service.holding_returns((30, 365, 730, 1095, 1825)),
             }
-            self.root.after(0, self._render, payload)
+            self._post_ui(self._finish_load, generation, payload, None)
         except Exception as exc:  # UI boundary: display a useful error instead of crashing.
-            self.root.after(0, self._show_error, str(exc))
+            self._post_ui(self._finish_load, generation, None, str(exc))
+
+    def _finish_load(self, generation: int, payload: dict | None, error: str | None) -> None:
+        if generation != self._load_generation:
+            return
+        if error is not None:
+            self._show_error(error)
+        else:
+            self._render(payload)
 
     def _render(self, payload: dict[str, Any]) -> None:
         latest, metadata, signal = payload["latest"], payload["metadata"], payload["signal"]
@@ -1590,6 +1492,7 @@ class MarketDesktopApp:
         self.chart.set_rows(payload["indicators"])
         self._render_signal(self.buy_widgets, signal["accumulation"], "%" if signal.get("strategy_id") == "ma_dynamic_v1" else "×")
         self._render_signal(self.sell_widgets, signal["reduction"], "%")
+        self.current_strategy_id = signal.get("strategy_id", "adaptive")
         self.current_reference = signal.get("daily_reference")
         self._update_reference()
         self.returns_table.delete(*self.returns_table.get_children())
@@ -1598,12 +1501,13 @@ class MarketDesktopApp:
             self.returns_table.insert("", "end", values=(period_labels[row["days"]], f"{row['samples']:,}", format_pct(row.get("mean")), format_pct(row.get("median")), format_pct(row.get("positive_rate")), format_pct(row.get("min")), format_pct(row.get("max"))))
         self.status_var.set(f"{self.provider_status} · {metadata['rows']:,} 条记录")
         self.refresh_button.configure(state="normal")
-        self.update_button.configure(state="normal")
+        self.update_button.configure(state="disabled" if self._updating else "normal")
 
     def _update_reference(self) -> None:
         ref = getattr(self, "current_reference", None)
         if not ref or ref["status"] != "ok":
-            self.reference_text.configure(text="暂无V1金额参考（需有效日收益和MA250）")
+            message = "当前为个性化倍数策略，不使用 V1 金额换算" if getattr(self, "current_strategy_id", None) == "adaptive" else "暂无V1金额参考（需有效日收益和MA250）"
+            self.reference_text.configure(text=message)
             return
         try:
             coefficient = float(self.reference_equity.get().replace(",", "")) / 10000
@@ -1613,11 +1517,6 @@ class MarketDesktopApp:
             self.reference_text.configure(text="请输入非负、有限的权益金额")
             return
         self.reference_text.configure(text=f"系数 {coefficient:g} · 加 {ref['baseline_buy'] * coefficient:.2f} 元 / 减 {ref['baseline_sell'] * coefficient:.2f} 元")
-        for widgets, key in ((self.buy_widgets, "baseline_buy"), (self.sell_widgets, "baseline_sell")):
-            widgets["score"].configure(text=f"{ref[key]:.2f}元")
-            widgets["level"].configure(text="每万元参考")
-            widgets["reasons"].configure(text=f"{ref['date']} · 价格涨跌估算，未含分红\n收盘交易前持仓1万元；实际金额 × 系数")
-
     def _set_reference_equity(self, value: float) -> None:
         self.reference_equity.set(f"{value:,.0f}")
         self.reference_entry.icursor("end")
@@ -1633,7 +1532,10 @@ class MarketDesktopApp:
 
     @staticmethod
     def _render_signal(widgets: dict[str, tk.Label], signal: dict[str, Any], suffix: str) -> None:
-        widgets["level"].configure(text=f"{signal['level']}信号")
+        label = f"{signal['level']}信号"
+        if "condition" in signal:
+            label = f"{signal['level']} · 当日{'亏损' if signal['side'] == 'buy' else '盈利'}比例"
+        widgets["level"].configure(text=label)
         score = float(signal["score"])
         widgets["score"].configure(text=f"{score:.1f}{suffix}" if suffix == "×" else f"{score:.0f}{suffix}")
         widgets["action"].configure(text=signal["suggested_action"])
@@ -1642,7 +1544,7 @@ class MarketDesktopApp:
     def _show_error(self, message: str) -> None:
         self.status_var.set("数据读取失败")
         self.refresh_button.configure(state="normal")
-        self.update_button.configure(state="normal")
+        self.update_button.configure(state="disabled" if self._updating else "normal")
         messagebox.showerror("市场航图", f"无法读取行情数据：\n{message}", parent=self.root)
 
 

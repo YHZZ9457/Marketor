@@ -1,7 +1,11 @@
 #define MyAppName "Marketor 市场航图"
-#define MyAppVersion "0.21.1"
+#define MyAppVersion "0.22.0"
 #define MyAppPublisher "YHZZ9457"
 #define MyAppExeName "Marketor.exe"
+
+#ifndef MyAppSource
+  #define MyAppSource "..\dist\Marketor"
+#endif
 
 [Setup]
 AppId={{96C43EE5-0AD7-4CD4-88F2-238B51224127}
@@ -23,7 +27,7 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=..\assets\app-icon.ico
 
 [Files]
-Source: "..\dist\Marketor\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyAppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

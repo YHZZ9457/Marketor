@@ -132,7 +132,7 @@
     <section class="returns-panel panel" id="ma-dynamic-panel">
         <div class="section-head"><h2>MA动态策略 V1 · 所有指数暂时统一适用</h2></div>
       <details class="strategy-details"><summary>查看策略规则与回测假设</summary><p>首次价格 ≤ MA500 × 1.10，投入10,000元；之后按 MA250 乖离和当日全收益持仓盈亏交易。</p>
-      <p>亏损日 ≤ -5% / -10% / -15% 加仓亏损的50% / 75% / 100%；盈利日 ≥ +10% / +15% / +20% 减仓盈利的50% / 75% / 100%。只取最高档。</p>
+      <p>亏损日 ≤ -5% / -10% / -15% 加仓亏损的50% / 75% / 100%；盈利日 ≥ +10% / +15% / +20% 减仓盈利的50% / 75% / 100%。只取最高档。50% / 75% / 100% 指当日盈亏金额的比例，不是总持仓比例；金额换算单独显示。</p>
       <p>卖出进入现金池，加仓先用现金、不足再追加；现金不计息，收盘模拟成交，未计费用及滑点。</p></details>
       <p id="ma-dynamic-status" aria-live="polite">正在读取策略…</p>
       <p id="ma-dynamic-summary"></p>
@@ -147,7 +147,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>持有期</th><th>样本数</th><th>平均收益</th><th>中位数</th><th>正收益率</th><th>最差</th><th>最好</th></tr></thead>
+          <thead id="returns-head"><tr><th>持有期</th><th>样本数</th><th>平均收益</th><th>中位数</th><th>正收益率</th><th>最差</th><th>最好</th></tr></thead>
           <tbody id="returns-body"></tbody>
         </table>
       </div>

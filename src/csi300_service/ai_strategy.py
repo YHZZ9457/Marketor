@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 import numpy as np
 import pandas as pd
@@ -84,9 +85,17 @@ class OpenAICompatibleJSONClient:
         model: str = "deepseek-v4-flash", opener: Callable[..., Any] | None = None,
     ):
         self.api_key = api_key.strip()
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url.strip().rstrip("/")
         self.model = model.strip()
         self.opener = opener or urlopen
+
+    @staticmethod
+    def _error_message(exc: Exception) -> str:
+        if isinstance(exc, HTTPError):
+            return {401: "API Key 无效或已过期", 403: "接口拒绝访问，请检查权限", 429: "请求过多或额度不足，请稍后重试"}.get(exc.code, f"服务返回 HTTP {exc.code}，请检查端点和模型配置")
+        if isinstance(exc, (TimeoutError, URLError)):
+            return "网络连接失败或超时，请检查网络和 Base URL 后重试"
+        return "响应格式不正确或内容为空，请检查模型是否支持当前请求"
 
     def complete_json(self, system_prompt: str, user_prompt: str) -> dict[str, Any]:
         if not self.api_key:
@@ -109,11 +118,17 @@ class OpenAICompatibleJSONClient:
         )
         try:
             response = self.opener(request, timeout=60)
-            envelope = json.loads(response.read().decode("utf-8"))
+            try:
+                envelope = json.loads(response.read().decode("utf-8"))
+            finally:
+                response.close()
             content = envelope["choices"][0]["message"]["content"]
-            return json.loads(content)
+            result = json.loads(content)
+            if not isinstance(result, dict):
+                raise ValueError("模型必须返回 JSON 对象")
+            return result
         except Exception as exc:
-            raise RuntimeError(f"AI 策略接口调用失败：{exc}") from exc
+            raise RuntimeError(f"AI 策略接口调用失败：{self._error_message(exc)}") from exc
 
     def chat(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
         """Return one non-streaming conversational answer."""
@@ -138,13 +153,16 @@ class OpenAICompatibleJSONClient:
         )
         try:
             response = self.opener(request, timeout=75)
-            envelope = json.loads(response.read().decode("utf-8"))
+            try:
+                envelope = json.loads(response.read().decode("utf-8"))
+            finally:
+                response.close()
             content = envelope["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise ValueError("模型返回空内容")
             return content.strip()
         except Exception as exc:
-            raise RuntimeError(f"AI 自由分析接口调用失败：{exc}") from exc
+            raise RuntimeError(f"AI 自由分析接口调用失败：{self._error_message(exc)}") from exc
 
 
 class InstrumentStrategyOptimizer:
@@ -157,7 +175,7 @@ class InstrumentStrategyOptimizer:
 
     def optimize(
         self, *, client: OpenAICompatibleJSONClient | None = None,
-        provider_name: str = "本地量化", apply: bool = True,
+        provider_name: str = "本地量化", apply: bool = True, persist: bool = True,
     ) -> AdaptiveStrategyProfile:
         usable = self.frame.dropna(subset=["bias250", "bias500", "rsi14"]).copy()
         if len(usable) < 500:
@@ -173,7 +191,10 @@ class InstrumentStrategyOptimizer:
         model = "quantile-baseline"
         if client is not None:
             proposals = client.complete_json(self._system_prompt(), json.dumps(self._summary(train), ensure_ascii=False))
-            for raw in proposals.get("candidates", [])[:4]:
+            proposed = proposals.get("candidates", [])
+            if not isinstance(proposed, list):
+                raise ValueError("AI 返回的 candidates 必须为数组；原策略未修改")
+            for raw in proposed[:4]:
                 try:
                     candidates.append(self._validate_candidate(raw))
                 except (ValueError, TypeError, KeyError):
@@ -195,8 +216,15 @@ class InstrumentStrategyOptimizer:
             rationale=str(chosen.get("rationale") or "基于训练区间历史分位生成，并通过样本外回测选择。"),
             active=apply, created_at=datetime.now().isoformat(timespec="seconds"), validation=metrics,
         )
-        self._save(profile)
+        if persist:
+            self._save(profile)
         return profile
+
+    @staticmethod
+    def apply_profile(profile: AdaptiveStrategyProfile) -> AdaptiveStrategyProfile:
+        updated = replace(profile, active=True)
+        InstrumentStrategyOptimizer._save(updated)
+        return updated
 
     @staticmethod
     def _system_prompt() -> str:
@@ -235,6 +263,11 @@ class InstrumentStrategyOptimizer:
 
     @staticmethod
     def _validate_candidate(raw: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            raise ValueError("候选必须为对象")
+        values = [*raw["buy_bias_levels"], *raw["sell_bias_levels"], raw["rsi_oversold"], raw["rsi_extreme"]]
+        if not all(math.isfinite(float(value)) for value in values):
+            raise ValueError("候选参数必须为有限数值")
         buy = [min(-0.01, max(-0.35, float(value))) for value in raw["buy_bias_levels"]]
         sell = [min(0.50, max(0.03, float(value))) for value in raw["sell_bias_levels"]]
         if len(buy) != 4 or len(sell) != 4:

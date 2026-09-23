@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import math
 
 import pandas as pd
 
@@ -22,6 +23,10 @@ class EventBacktester:
         frame = self.service.df.reset_index(drop=True)
         if metric not in frame.columns:
             raise ValueError(f"未知事件指标：{metric}")
+        if not pd.api.types.is_numeric_dtype(frame[metric]) or pd.api.types.is_bool_dtype(frame[metric]):
+            raise ValueError("事件指标必须为数值指标")
+        if not math.isfinite(threshold):
+            raise ValueError("事件阈值必须为有限数值")
         if direction not in {"below", "above"}:
             raise ValueError("direction 必须是 below 或 above")
         if cooldown_trading_days < 0:
